@@ -1,0 +1,112 @@
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: -D warnings
+  RUSTDOCFLAGS: -D warnings
+
+jobs:
+  test:
+    name: Test, lint, docs (RustCrypto)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo fmt --check
+      - run: cargo clippy --all-targets -- -D warnings
+      - run: cargo test
+      - run: cargo doc --no-deps
+      - run: cargo run --example demo
+
+  features:
+    name: Feature powerset
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: taiki-e/install-action@cargo-hack
+      - uses: Swatinem/rust-cache@v2
+      # `boringssl` needs a BoringSSL build; the `boringssl` job covers it.
+      - run: cargo hack check --feature-powerset --features rustcrypto --exclude-features boringssl --all-targets
+
+  msrv:
+    name: Minimum supported Rust (library)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.85.0
+      - uses: Swatinem/rust-cache@v2
+      # Dev-dependencies need a newer toolchain; the library itself builds here.
+      - run: cargo check --lib
+
+  targets:
+    name: Other targets
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: i686-unknown-linux-gnu, wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo check --target i686-unknown-linux-gnu
+      - run: cargo check --target wasm32-unknown-unknown --features wasm_js
+      - run: cargo check --no-default-features --features rustcrypto
+
+  dependencies:
+    name: Dependencies
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: taiki-e/install-action@cargo-machete
+      - run: cargo machete
+      - uses: EmbarkStudios/cargo-deny-action@v2
+
+  boringssl:
+    name: Test, lint (BoringSSL and both backends)
+    runs-on: ubuntu-latest
+    env:
+      BORINGSSL_BUILD_DIR: ${{ github.workspace }}/boringssl/build
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: sudo apt-get update && sudo apt-get install -y cmake ninja-build
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: bindgen-cli
+      - name: Cache the BoringSSL build
+        id: boringssl-cache
+        uses: actions/cache@v4
+        with:
+          path: boringssl
+          key: boringssl-${{ runner.os }}-${{ hashFiles('scripts/build-boringssl.sh') }}
+      - if: steps.boringssl-cache.outputs.cache-hit != 'true'
+        run: scripts/build-boringssl.sh
+      - run: cargo test --no-default-features --features boringssl --config boringssl/cargo-config.toml
+      - run: cargo test --features rustcrypto,boringssl --config boringssl/cargo-config.toml
+      - run: cargo clippy --all-targets --features rustcrypto,boringssl --config boringssl/cargo-config.toml -- -D warnings
