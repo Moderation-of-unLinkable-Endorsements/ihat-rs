@@ -144,8 +144,8 @@ library in `p256` and `getrandom`, and the precomputed generator tables of
 * Decoding rejects non-canonical scalars and points, the identity element,
   non-minimal length prefixes, trailing bytes, and redemptions whose vectors
   do not match the depth of the Anchor Set.
-* `redeem` refuses Anchor Sets of fewer than two keys, and
-  `verify_redemption` rejects them.
+* `redeem` refuses an empty Anchor Set, and `verify_redemption` rejects
+  one. A set of one key is accepted; the redemption then names its Anchor.
 * The Moderator must reject a repeated nullifier and record it before
   granting anything; the crate returns the nullifier and leaves the store to
   the deployment.
@@ -167,7 +167,7 @@ at the first, last, and interior positions, and `P` and `Pinv` of further
 points. Every `rand` entry is replayed in place of the random number
 generator, so every key, message, state, Endorsement, and redemption must
 match byte for byte. Further tests cover issuance and redemption at every
-position of Anchor Sets of 2 to 9 keys, tampering with every field of a
+position of Anchor Sets of 1 to 9 keys, tampering with every field of a
 redemption, other contexts, digests, and Anchor Sets, the identity checks of
 `Verify` and `VerifyIssuer`, the x-coordinate test against point decoding,
 and RFC 9380 known answers for the primitives.

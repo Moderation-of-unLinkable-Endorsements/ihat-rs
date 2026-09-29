@@ -643,9 +643,9 @@ fn compute_proof_challenge<B: Backend>(
     ))
 }
 
-/// The hashes of the encodings of `BranchCommitment(proof_challenge,
-/// response, X_hat - pkA)` for every `pkA` in the Anchor Set, or `error` if
-/// one is the identity.
+/// The encodings of `BranchCommitment(proof_challenge, response, X_hat -
+/// pkA)` for every `pkA` in the Anchor Set, or `error` if one is the
+/// identity.
 ///
 /// Each is computed as `(proof_challenge * X_hat + response * B) -
 /// proof_challenge * pkA`, the same point.
@@ -655,14 +655,14 @@ fn branch_commitments<B: Backend>(
     proof_challenge: &B::Scalar,
     response: &B::Scalar,
     error: Error,
-) -> Result<Vec<B::Scalar>, Error> {
+) -> Result<Vec<Node>, Error> {
     let base = B::Point::lincomb([(x_hat, proof_challenge), (&B::Point::generator(), response)]);
     anchor_set
         .iter()
         .map(|key| {
-            let commitment = base.sub(&key.pk.mul(proof_challenge));
-            let encoded = commitment.to_bytes().ok_or(error)?;
-            Ok(commitment::hash_node::<B>(&encoded))
+            base.sub(&key.pk.mul(proof_challenge))
+                .to_bytes()
+                .ok_or(error)
         })
         .collect()
 }
@@ -673,8 +673,8 @@ fn branch_commitments<B: Backend>(
 /// key at `index` in the Anchor Set without revealing `index`. Consumes the
 /// Endorsement.
 ///
-/// The Anchor Set must hold at least two keys, and the Moderator's list
-/// in its order.
+/// The Anchor Set must be the Moderator's list, in its order. A set of one
+/// key is accepted, and the redemption then names its Anchor.
 pub fn redeem<B: Backend>(
     anchor_set: &[PublicKey<B>],
     index: usize,
@@ -704,9 +704,6 @@ pub(crate) fn redeem_with<B: Backend, R: Random>(
     rng: &mut R,
 ) -> Result<Redemption<B>, Error> {
     let n = anchor_set.len();
-    if n < 2 {
-        return Err(Error::Verify);
-    }
     if index >= n || n > usize::from(u16::MAX) {
         return Err(Error::InvalidInput);
     }
@@ -822,6 +819,10 @@ fn prove_issuer<B: Backend>(
         &response,
         Error::Derive,
     )?;
+    let leaves = leaves
+        .iter()
+        .map(|leaf| commitment::hash_node::<B>(leaf))
+        .collect();
     let openings =
         commitment::vec_equivocate(&first, &keys, trapdoors, first_openings, leaves, index)?;
     Ok((proof_challenge, response, keys, openings))
@@ -855,7 +856,7 @@ fn verify_issuer<B: Backend>(
     challenge_digest: &[u8],
 ) -> Result<(), Error> {
     let n = anchor_set.len();
-    if n < 2 {
+    if n == 0 {
         return Err(Error::Verify);
     }
     let q = commitment::depth(n);
@@ -882,12 +883,7 @@ fn verify_issuer<B: Backend>(
         .iter()
         .map(|q| Key::<B>::public(q.clone()).map_err(|_| Error::Verify))
         .collect::<Result<Vec<_>, _>>()?;
-    let root = commitment::vec_commit(
-        Zeroizing::new(leaves),
-        &keys,
-        &redemption.openings,
-        Error::Verify,
-    )?;
+    let root = commitment::vec_commit(&leaves, &keys, &redemption.openings, Error::Verify)?;
     let expected = compute_proof_challenge::<B>(&statement, &redemption.commitment_keys, &root)?;
     if bool::from(expected.ct_eq(&redemption.proof_challenge)) {
         Ok(())

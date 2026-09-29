@@ -61,7 +61,7 @@ fn check<B: Backend>(anchor_set: &[PublicKey<B>], redemption: &Redemption<B>) ->
 }
 
 fn issue_and_redeem_everywhere<B: Backend>() {
-    for n in 2..=9 {
+    for n in 1..=9 {
         let (secret, public) = keys::<B>(n);
         for index in 0..n {
             let endorsement = issue(&secret[index], CTX_ISS, CTX_RED);
@@ -160,10 +160,20 @@ fn redemption_rejections<B: Backend>() {
     let wrong = redemption(&public, 2, endorsement);
     assert_eq!(check(&public, &wrong).unwrap_err(), Error::Verify);
 
-    // Anchor Sets too small to hide the Anchor, and indices outside them.
+    // A one-key redemption verifies only against that key, and decodes only
+    // against an Anchor Set of depth zero.
+    let endorsement = Endorsement::<B>::from_bytes(&stored).unwrap();
+    let single = redemption(&public[3..4], 0, endorsement);
+    assert!(single.commitment_keys.is_empty() && single.openings.is_empty());
+    check(&public[3..4], &single).unwrap();
+    assert_eq!(check(&public[2..3], &single).unwrap_err(), Error::Verify);
+    assert_eq!(check(&public[2..4], &single).unwrap_err(), Error::Verify);
+    assert!(Redemption::<B>::from_bytes(&single.to_bytes(), 2).is_err());
+
+    // An empty Anchor Set, and indices outside the set.
     let endorsement = Endorsement::<B>::from_bytes(&stored).unwrap();
     let error = redeem_with(
-        &public[3..4],
+        &[],
         0,
         endorsement,
         CTX_ISS,
@@ -172,7 +182,8 @@ fn redemption_rejections<B: Backend>() {
         &mut os_rng::<B>(),
     )
     .unwrap_err();
-    assert_eq!(error, Error::Verify);
+    assert_eq!(error, Error::InvalidInput);
+    assert_eq!(check(&[], &single).unwrap_err(), Error::Verify);
     let endorsement = Endorsement::<B>::from_bytes(&stored).unwrap();
     let error = redeem_with(
         &public,

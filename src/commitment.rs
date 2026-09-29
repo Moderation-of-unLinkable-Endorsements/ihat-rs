@@ -106,18 +106,22 @@ enum Level<B: Backend> {
     Root(Node),
 }
 
-/// `VecCommit(V, Qi, rands)` for `V` of at least two values, given their
-/// hashes: the root, the last commitment computed.
+/// `VecCommit(V, Qi, rands)`: the root, which is the last commitment
+/// computed, or the value itself when `V` holds one value.
 pub(crate) fn vec_commit<B: Backend>(
-    leaves: Zeroizing<Vec<B::Scalar>>,
+    leaves: &[Node],
     keys: &[Key<B>],
     openings: &[B::Scalar],
     error: Error,
 ) -> Result<Node, Error> {
-    if leaves.len() < 2 || keys.len() != depth(leaves.len()) || openings.len() != keys.len() {
+    if leaves.is_empty() || keys.len() != depth(leaves.len()) || openings.len() != keys.len() {
         return Err(Error::InvalidInput);
     }
-    let mut level = leaves;
+    if let [leaf] = leaves {
+        return Ok(*leaf);
+    }
+    let mut level: Zeroizing<Vec<B::Scalar>> =
+        Zeroizing::new(leaves.iter().map(|leaf| hash_node::<B>(leaf)).collect());
     for (key, opening) in keys.iter().zip(openings) {
         match next_level(&level, key, opening, error)? {
             Level::Hashes(next) => level = next,
@@ -150,9 +154,9 @@ pub(crate) struct FirstMove<B: Backend> {
     pub(crate) root: Node,
 }
 
-/// `CommitValAtPlace(keys, n, index, value, openings)` for `n >= 2`: `value`
-/// at leaf `index` and the empty string at every other leaf. Constant time
-/// in `index` and `value`.
+/// `CommitValAtPlace(keys, n, index, value, openings)`: `value` at leaf
+/// `index` and the empty string at every other leaf. Constant time in
+/// `index` and `value`.
 pub(crate) fn commit_val_at_place<B: Backend>(
     keys: &[Key<B>],
     n: usize,
@@ -160,8 +164,14 @@ pub(crate) fn commit_val_at_place<B: Backend>(
     value: &Node,
     openings: &[B::Scalar],
 ) -> Result<FirstMove<B>, Error> {
-    if n < 2 || keys.len() != depth(n) || openings.len() != keys.len() {
+    if n == 0 || keys.len() != depth(n) || openings.len() != keys.len() {
         return Err(Error::InvalidInput);
+    }
+    if n == 1 {
+        return Ok(FirstMove {
+            levels: Vec::new(),
+            root: *value,
+        });
     }
     let empty = hash_node::<B>(b"");
     let mut held = hash_node::<B>(value);
