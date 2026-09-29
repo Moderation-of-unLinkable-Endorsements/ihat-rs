@@ -21,7 +21,7 @@ const CTX: &[u8] = PROTOCOL_CONTEXT;
 const MAX_REDEMPTION_CONTEXT: usize = u16::MAX as usize - NULLIFIER_LENGTH - 4;
 
 /// The largest session identifier a variable-length integer can prefix.
-const MAX_SESSION_ID: usize = (1 << 62) - 1;
+const MAX_SESSION_ID: u64 = (1 << 62) - 1;
 
 // ---------------------------------------------------------------------------
 // Keys
@@ -386,7 +386,7 @@ pub(crate) fn commit_with<B: Backend, R: Random>(
     session_id: &[u8],
     rng: &mut R,
 ) -> Result<(AnchorState<B>, CommitMessage<B>), Error> {
-    if session_id.len() > MAX_SESSION_ID {
+    if session_id.len() as u64 > MAX_SESSION_ID {
         return Err(Error::InvalidInput);
     }
     let z = context_base::<B>(ctx_iss)?;
@@ -431,14 +431,15 @@ pub fn challenge<B: Backend>(
 }
 
 pub(crate) fn challenge_with<B: Backend, R: Random>(
-    // The public key is not an input of the computation; the type rules out
-    // the identity, which `Challenge` rejects.
-    _public_key: &PublicKey<B>,
+    public_key: &PublicKey<B>,
     ctx_iss: &[u8],
     ctx_red: &[u8],
     commitment: &CommitMessage<B>,
     rng: &mut R,
 ) -> Result<(ClientState<B>, ChallengeMessage<B>), Error> {
+    if bool::from(public_key.pk.is_identity()) {
+        return Err(Error::Verify);
+    }
     u16_prefix(ctx_iss)?;
     check_redemption_context(ctx_red)?;
     let mut rand = Zeroizing::new([0u8; NULLIFIER_LENGTH + 4 * NSEED]);
@@ -513,6 +514,9 @@ pub fn finalize<B: Backend>(
     state: ClientState<B>,
     response: &ResponseMessage<B>,
 ) -> Result<Endorsement<B>, Error> {
+    if bool::from(public_key.pk.is_identity()) {
+        return Err(Error::Verify);
+    }
     let z = context_base::<B>(&state.ctx_iss)?;
     if bool::from(response.y.is_zero()) {
         return Err(Error::Verify);
@@ -549,6 +553,9 @@ pub fn verify<B: Backend>(
     ctx_iss: &[u8],
     ctx_red: &[u8],
 ) -> Result<(), Error> {
+    if bool::from(public_key.pk.is_identity()) {
+        return Err(Error::Verify);
+    }
     verify_signature(&public_key.pk, &endorsement.signature, ctx_iss, ctx_red)
 }
 

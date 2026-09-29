@@ -97,8 +97,9 @@ A BoringSSL tree already built for act-rs works too: pass its
 `cargo-config.toml` and build directory instead. The patch rewrites
 `Cargo.lock`; restore it before committing.
 
-The crate is `no_std` with `alloc`; the `std` feature only enables the
-precomputed generator tables of `p256`.
+The crate is `no_std` with `alloc`. The `std` feature enables the standard
+library in `p256` and `getrandom`, and the precomputed generator tables of
+`p256`.
 
 ## Design
 
@@ -128,7 +129,10 @@ precomputed generator tables of `p256`.
 
 * The Anchor's signing key and session state, the Client's blinding factors
   and nullifier, and the redemption's `delta`, index, trapdoors, and first
-  openings are handled in constant time and zeroized after use.
+  openings are handled in constant time and zeroized after use. On the
+  `boringssl` backend, point addition takes a separate path when its operands
+  are equal or negatives of each other, which for uniformly random secret
+  operands happens with negligible probability.
 * `respond` consumes the Anchor's state, `finalize` the Client's, and
   `redeem` the Endorsement, so none is used twice within a process. An
   Anchor must also refuse a second challenge for a session it has answered,

@@ -455,6 +455,53 @@ fn encodings<B: Backend>() {
     assert!(Redemption::<B>::from_bytes(&longer, 3).is_err());
 }
 
+fn identity_public_keys_are_rejected<B: Backend>() {
+    use zeroize::Zeroize;
+
+    let (secret, _) = keys::<B>(1);
+    let endorsement = issue(&secret[0], CTX_ISS, CTX_RED);
+    // A zeroized key has the identity as its public key.
+    let mut zeroized = SecretKey::<B>::generate_with(&mut os_rng::<B>()).unwrap();
+    zeroized.zeroize();
+    let identity = zeroized.public_key();
+    let (state, commitment) = commit_with::<B, _>(CTX_ISS, b"sid", &mut os_rng::<B>()).unwrap();
+    assert_eq!(
+        challenge_with(&identity, CTX_ISS, CTX_RED, &commitment, &mut os_rng::<B>()).unwrap_err(),
+        Error::Verify
+    );
+    let public_key = secret[0].public_key();
+    let (client, challenge) = challenge_with(
+        &public_key,
+        CTX_ISS,
+        CTX_RED,
+        &commitment,
+        &mut os_rng::<B>(),
+    )
+    .unwrap();
+    let response = respond(&secret[0], state, &challenge).unwrap();
+    assert_eq!(
+        finalize(&identity, client, &response).unwrap_err(),
+        Error::Verify
+    );
+    assert_eq!(
+        verify(&identity, &endorsement, CTX_ISS, CTX_RED).unwrap_err(),
+        Error::Verify
+    );
+}
+
+fn only_compressed_prefixes_decode<B: Backend>() {
+    let (_, public) = keys::<B>(1);
+    let mut bytes = public[0].to_bytes();
+    assert!(PublicKey::<B>::from_bytes(&bytes).is_ok());
+    for prefix in [0x00, 0x01, 0x04, 0x05, 0x06, 0x07, 0xff] {
+        bytes[0] = prefix;
+        assert!(
+            PublicKey::<B>::from_bytes(&bytes).is_err(),
+            "prefix {prefix:#04x}"
+        );
+    }
+}
+
 backend_tests!(
     issue_and_redeem_everywhere,
     redemption_rejections,
@@ -463,4 +510,6 @@ backend_tests!(
     input_limits,
     keys_encode,
     encodings,
+    identity_public_keys_are_rejected,
+    only_compressed_prefixes_decode,
 );

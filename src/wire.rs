@@ -8,6 +8,8 @@
 
 use alloc::vec::Vec;
 
+use zeroize::Zeroizing;
+
 use crate::backend::{Backend, POINT_LENGTH, Point, SCALAR_LENGTH, Scalar};
 use crate::commitment::depth;
 use crate::hash::require;
@@ -73,14 +75,22 @@ impl<'a> Reader<'a> {
         self.take(length)
     }
 
-    fn signature<B: Backend>(&mut self) -> Result<Signature<B>, Error> {
-        Ok(Signature {
-            c: self.scalar::<B>()?,
-            s: self.scalar::<B>()?,
-            y: self.scalar::<B>()?,
-            t: self.scalar::<B>()?,
-            nf: *self.array()?,
-        })
+    /// A `Signature`, held in a `Zeroizing` so that a decoding failure
+    /// wipes the fields read so far.
+    fn signature<B: Backend>(&mut self) -> Result<Zeroizing<Signature<B>>, Error> {
+        let mut signature = Zeroizing::new(Signature {
+            c: B::Scalar::default(),
+            s: B::Scalar::default(),
+            y: B::Scalar::default(),
+            t: B::Scalar::default(),
+            nf: [0; NULLIFIER_LENGTH],
+        });
+        signature.c = self.scalar::<B>()?;
+        signature.s = self.scalar::<B>()?;
+        signature.y = self.scalar::<B>()?;
+        signature.t = self.scalar::<B>()?;
+        signature.nf = *self.array()?;
+        Ok(signature)
     }
 
     fn finish(self) -> Result<(), Error> {
@@ -212,7 +222,9 @@ impl<B: Backend> Endorsement<B> {
         let mut reader = Reader::new(bytes);
         let signature = reader.signature::<B>()?;
         reader.finish()?;
-        Ok(Self { signature })
+        Ok(Self {
+            signature: (*signature).clone(),
+        })
     }
 }
 
@@ -278,7 +290,7 @@ impl<B: Backend> Redemption<B> {
         let mut openings = Reader::new(openings);
         Ok(Self {
             x_hat,
-            shown,
+            shown: (*shown).clone(),
             proof_challenge,
             response,
             commitment_keys: (0..q)
