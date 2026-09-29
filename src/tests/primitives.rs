@@ -198,26 +198,40 @@ fn permutation_properties<B: Backend>() {
 }
 
 fn derivations<B: Backend>() {
-    let rand = [1u8; 3 * 48];
-    let a = hash::derive_scalars::<B>(CTX, &rand, b"a").unwrap();
-    let b = hash::derive_scalars::<B>(CTX, &rand, b"b").unwrap();
+    let rand = [1u8; 48];
+    let a = hash::derive_scalars::<B>(CTX, &rand, b"a", 3).unwrap();
+    let b = hash::derive_scalars::<B>(CTX, &rand, b"b", 3).unwrap();
     assert_eq!(a.len(), 3);
     for (x, y) in a.iter().zip(b.iter()) {
         assert_ne!(x.to_bytes(), y.to_bytes());
     }
     // The protocol context separates derivations.
-    let other = hash::derive_scalars::<B>(b"ACTv1-P256-SHA256", &rand, b"a").unwrap();
+    let other = hash::derive_scalars::<B>(b"ACTv1-P256-SHA256", &rand, b"a", 3).unwrap();
     assert_ne!(a[0].to_bytes(), other[0].to_bytes());
-    for wrong in [&rand[..0], &rand[..47], &rand[..49]] {
+    let long = [1u8; 49];
+    for wrong in [&long[..0], &long[..47], &long[..49]] {
         assert_eq!(
-            hash::derive_scalars::<B>(CTX, wrong, b"a").unwrap_err(),
+            hash::derive_scalars::<B>(CTX, wrong, b"a", 1).unwrap_err(),
+            crate::Error::InvalidInput
+        );
+        assert_eq!(
+            hash::derive_nonces::<B>(CTX, b"secret", b"e", &[b"x"], wrong, 1).unwrap_err(),
             crate::Error::InvalidInput
         );
     }
     let seed = [1u8; 48];
-    let split = hash::derive_nonces::<B>(CTX, b"secret", b"e", &[b"inst", b"ance"], &seed).unwrap();
-    let joined = hash::derive_nonces::<B>(CTX, b"secret", b"e", &[b"instance"], &seed).unwrap();
-    assert_eq!(split[0].to_bytes(), joined[0].to_bytes());
+    let split =
+        hash::derive_nonces::<B>(CTX, b"secret", b"e", &[b"inst", b"ance"], &seed, 2).unwrap();
+    let joined = hash::derive_nonces::<B>(CTX, b"secret", b"e", &[b"instance"], &seed, 2).unwrap();
+    assert_eq!(split[1].to_bytes(), joined[1].to_bytes());
+    // A changed byte of the randomness changes every nonce.
+    let mut changed = seed;
+    changed[47] ^= 1;
+    let others =
+        hash::derive_nonces::<B>(CTX, b"secret", b"e", &[b"instance"], &changed, 2).unwrap();
+    for (x, y) in joined.iter().zip(others.iter()) {
+        assert_ne!(x.to_bytes(), y.to_bytes());
+    }
     let key = hash::derive_key_scalar::<B>(CTX, &seed, b"GenerateKeyPair").unwrap();
     assert!(!bool::from(key.is_zero()));
     assert!(hash::hash_to_group::<B>(CTX, &[b"x"]).is_ok());

@@ -201,7 +201,7 @@ fn redemption_rejections<B: Backend>() {
 fn redemption_is_deterministic<B: Backend>() {
     let (secret, public) = keys::<B>(3);
     let stored = issue(&secret[1], CTX_ISS, CTX_RED).to_bytes();
-    let rand = [7u8; 6 * 48];
+    let rand = [7u8; 2 * 48];
     let run = || {
         let endorsement = Endorsement::<B>::from_bytes(&stored).unwrap();
         let mut rng = Replay::new(&rand);

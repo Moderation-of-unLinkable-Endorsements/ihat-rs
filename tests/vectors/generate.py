@@ -2,7 +2,7 @@
 implementation, in the draft's `key = value` format.
 
 Run from the `poc/` directory of the internet-drafts repository at commit
-e4690fcbb192b39a94664268917b5335aaf89779, with its virtual environment set
+03d3069fd0a4080b8c3d7ba026f63178796adfe8, with its virtual environment set
 up as its README describes:
 
     .venv/bin/python /path/to/generate.py > extended.txt
@@ -21,8 +21,10 @@ from rollatini import protocol as rollatini, vectors
 LABEL = b"Rollatiniv1-P256-SHA256 extended vectors"
 # Anchor Set sizes and the position of the issuing Anchor in each: the
 # first and last positions, odd sizes that carry a node up at several
-# levels, and powers of two.
-REDEMPTIONS = [(2, 0), (3, 2), (4, 1), (6, 5), (7, 6), (8, 5), (9, 8), (16, 9), (33, 32)]
+# levels, powers of two, and a single key.
+REDEMPTIONS = [
+    (2, 0), (3, 2), (4, 1), (6, 5), (7, 6), (8, 5), (9, 8), (16, 9), (33, 32), (1, 0)
+]
 PERMUTATION_POINTS = 8
 
 

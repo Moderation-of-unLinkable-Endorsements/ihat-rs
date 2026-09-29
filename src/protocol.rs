@@ -390,9 +390,9 @@ pub(crate) fn commit_with<B: Backend, R: Random>(
         return Err(Error::InvalidInput);
     }
     let z = context_base::<B>(ctx_iss)?;
-    let mut rand = [0u8; 3 * NSEED];
+    let mut rand = [0u8; NSEED];
     rng.fill(&mut rand);
-    let derived = hash::derive_scalars::<B>(CTX, &rand, b"Commit");
+    let derived = hash::derive_scalars::<B>(CTX, &rand, b"Commit", 3);
     rand.zeroize();
     let derived = derived?;
     let state = AnchorState {
@@ -442,9 +442,9 @@ pub(crate) fn challenge_with<B: Backend, R: Random>(
     }
     u16_prefix(ctx_iss)?;
     check_redemption_context(ctx_red)?;
-    let mut rand = Zeroizing::new([0u8; NULLIFIER_LENGTH + 4 * NSEED]);
+    let mut rand = Zeroizing::new([0u8; NULLIFIER_LENGTH + NSEED]);
     rng.fill(rand.as_mut());
-    let derived = hash::derive_scalars::<B>(CTX, &rand[NULLIFIER_LENGTH..], b"Challenge")?;
+    let derived = hash::derive_scalars::<B>(CTX, &rand[NULLIFIER_LENGTH..], b"Challenge", 4)?;
     let mut state = ClientState::<B> {
         nf: [0; NULLIFIER_LENGTH],
         ctx_iss: ctx_iss.to_vec(),
@@ -673,8 +673,8 @@ fn branch_commitments<B: Backend>(
 /// key at `index` in the Anchor Set without revealing `index`. Consumes the
 /// Endorsement.
 ///
-/// The Anchor Set must be the Moderator's list, in its order. A set of one
-/// key is accepted, and the redemption then names its Anchor.
+/// The Anchor Set must be the Moderator's list, in its order. A redemption
+/// against a set of one key names its Anchor.
 pub fn redeem<B: Backend>(
     anchor_set: &[PublicKey<B>],
     index: usize,
@@ -708,10 +708,9 @@ pub(crate) fn redeem_with<B: Backend, R: Random>(
         return Err(Error::InvalidInput);
     }
     let index = index as u16;
-    let q = commitment::depth(n);
-    let mut rand = Zeroizing::new(alloc::vec![0u8; (2 * q + 2) * NSEED]);
-    rng.fill(&mut rand);
-    let mut delta = hash::derive_scalars::<B>(CTX, &rand[..NSEED], b"delta")?[0];
+    let mut rand = Zeroizing::new([0u8; 2 * NSEED]);
+    rng.fill(rand.as_mut());
+    let mut delta = hash::derive_scalars::<B>(CTX, &rand[..NSEED], b"delta", 1)?[0];
 
     // X_hat = anchor_set[index] + delta * B, selecting the key by
     // multiplying each by 0 or 1 so that `index` does not steer memory
@@ -789,13 +788,14 @@ fn prove_issuer<B: Backend>(
     if usize::from(index) >= n {
         return Err(Error::InvalidInput);
     }
-    if rand.len() != (2 * q + 1) * NSEED {
+    if rand.len() != NSEED {
         return Err(Error::InvalidInput);
     }
     let mut secret = [0u8; SCALAR_LENGTH + 2];
     secret[..SCALAR_LENGTH].copy_from_slice(&delta.to_bytes());
     secret[SCALAR_LENGTH..].copy_from_slice(&index.to_be_bytes());
-    let derived = hash::derive_nonces::<B>(CTX, &secret, b"ProveIssuer", &[statement], rand);
+    let derived =
+        hash::derive_nonces::<B>(CTX, &secret, b"ProveIssuer", &[statement], rand, 2 * q + 1);
     secret.zeroize();
     let derived = derived?;
     let r = &derived[0];
@@ -928,7 +928,7 @@ pub(crate) fn context_base_for_tests<B: Backend>(ctx_iss: &[u8]) -> B::Point {
 
 #[cfg(test)]
 pub(crate) fn delta_for_tests<B: Backend>(rand: &[u8]) -> B::Scalar {
-    hash::derive_scalars::<B>(CTX, &rand[..NSEED], b"delta")
+    hash::derive_scalars::<B>(CTX, &rand[..NSEED], b"delta", 1)
         .map(|scalars| scalars[0])
         .unwrap_or_default()
 }

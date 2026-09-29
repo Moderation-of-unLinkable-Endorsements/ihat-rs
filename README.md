@@ -14,7 +14,7 @@ Moderator learns the Endorsement's nullifier, which it uses to reject a second
 redemption, and nothing about which Anchor issued it.
 
 The implementation tracks the draft at commit
-[`e4690fc`](https://github.com/Moderation-of-unLinkable-Endorsements/internet-drafts/commit/e4690fcbb192b39a94664268917b5335aaf89779)
+[`03d3069`](https://github.com/Moderation-of-unLinkable-Endorsements/internet-drafts/commit/03d3069fd0a4080b8c3d7ba026f63178796adfe8)
 of the drafts repository and reproduces its test vectors byte for byte.
 
 > **Warning:** This code has not been audited. Use it at your own risk.
@@ -105,7 +105,7 @@ library in `p256` and `getrandom`, and the precomputed generator tables of
 
 * **Hashing and derivation** (`src/hash.rs`) are act-rs's functions with the
   protocol context as a parameter: `expand_message_xmd`, `HashToScalar`,
-  `HashToGroup`, and the draft's `DeriveScalars`, `SeedsToScalars`,
+  `HashToGroup`, and the draft's `DeriveScalars`, `ExpandScalars`,
   `DeriveNonces`, and `DeriveKeyPair`. Together with the backend and the
   random source they are meant to move into a crate shared with act-rs,
   `mole-p256`.
@@ -145,7 +145,7 @@ library in `p256` and `getrandom`, and the precomputed generator tables of
   non-minimal length prefixes, trailing bytes, and redemptions whose vectors
   do not match the depth of the Anchor Set.
 * `redeem` refuses an empty Anchor Set, and `verify_redemption` rejects
-  one. A set of one key is accepted; the redemption then names its Anchor.
+  one. A redemption against a set of one key names its Anchor.
 * The Moderator must reject a repeated nullifier and record it before
   granting anything; the crate returns the nullifier and leaves the store to
   the deployment.
@@ -162,9 +162,9 @@ cargo bench                                  # criterion, per backend
 `tests/vectors/draft.txt` is the draft's Test Vectors section with the
 fences and headings removed. `tests/vectors/extended.txt` was generated from
 the draft's Python reference implementation by `tests/vectors/generate.py`,
-with redemptions against Anchor Sets of 2, 3, 4, 6, 7, 8, 9, 16, and 33 keys
-at the first, last, and interior positions, and `P` and `Pinv` of further
-points. Every `rand` entry is replayed in place of the random number
+with redemptions against Anchor Sets of 2, 3, 4, 6, 7, 8, 9, 16, 33, and 1
+keys at the first, last, and interior positions, and `P` and `Pinv` of
+further points. Every `rand` entry is replayed in place of the random number
 generator, so every key, message, state, Endorsement, and redemption must
 match byte for byte. Further tests cover issuance and redemption at every
 position of Anchor Sets of 1 to 9 keys, tampering with every field of a

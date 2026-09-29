@@ -14,7 +14,7 @@
 
 //! Hashing and derivation under a protocol context: RFC 9380's
 //! `expand_message_xmd` over SHA-256, and the group's `HashToGroup`,
-//! `HashToScalar`, `DeriveScalars`, `SeedsToScalars`, `DeriveNonces`, and
+//! `HashToScalar`, `DeriveScalars`, `ExpandScalars`, `DeriveNonces`, and
 //! `DeriveKeyPair`.
 //!
 //! These are the functions of act-rs's `hash` module, taking the protocol
@@ -34,11 +34,13 @@ use crate::backend::{Backend, SCALAR_LENGTH, Scalar, Sha256};
 /// The seed length `Nseed`.
 pub(crate) const NSEED: usize = crate::SEED_LENGTH;
 
-/// Output length of the `expand_message_xmd` calls that produce seeds and
-/// scalars.
+/// Output length of the `expand_message_xmd` calls that produce scalars.
 const XMD_LENGTH: usize = 48;
 
-/// Length of the keys of `SeedsToScalars`, the hash output length `Nh`.
+/// The input block size of SHA-256, `s_in_bytes` in RFC 9380.
+const S_IN_BYTES: usize = 64;
+
+/// Length of the keys of `ExpandScalars`, the hash output length `Nh`.
 const NH: usize = 32;
 
 /// `expand_message_xmd` with SHA-256 (RFC 9380, Section 5.3.1), with the
@@ -149,26 +151,31 @@ pub(crate) fn hash_to_group<B: Backend>(ctx: &[u8], msg: &[&[u8]]) -> Result<B::
     B::hash_to_curve(msg, &[b"HashToGroup-", ctx]).ok_or(Error::Derive)
 }
 
-/// `G.DeriveScalars(rand, info)`: one scalar from each `Nseed` bytes of
-/// `rand`, under a key that `info` determines.
+/// `G.DeriveScalars(rand, info, count)`: `rand` and `info` hashed into a
+/// key, which `expand_scalars` expands into `count` scalars.
 pub(crate) fn derive_scalars<B: Backend>(
     ctx: &[u8],
     rand: &[u8],
     info: &[u8],
+    count: usize,
 ) -> Result<Zeroizing<Vec<B::Scalar>>, Error> {
+    if rand.len() != NSEED {
+        return Err(Error::InvalidInput);
+    }
     let info_len = u16::try_from(info.len()).map_err(|_| Error::InvalidInput)?;
-    let mut key = [0u8; NH];
+    let mut key = Zeroizing::new([0u8; NH]);
     XmdPrefix::<B::Sha256>::new(&[]).expand_into(
-        &[&info_len.to_be_bytes(), info],
+        &[rand, &info_len.to_be_bytes(), info],
         &[b"DeriveScalars-", ctx],
-        &mut key,
+        key.as_mut(),
     );
-    seeds_to_scalars::<B>(ctx, &key, rand)
+    expand_scalars::<B>(ctx, &key, count)
 }
 
-/// `G.DeriveNonces(secret, label, instance, rand)`: one nonce from each
-/// `Nseed` bytes of `rand`, under a key derived from the secret and the
-/// operation. `instance` is supplied in parts and hashed as their
+/// `G.DeriveNonces(secret, label, instance, rand, count)`: `rand`, the
+/// secret, and the operation hashed into a key, with `rand` and the secret
+/// each padded to whole blocks of the hash function, then expanded into
+/// `count` nonces. `instance` is supplied in parts and hashed as their
 /// concatenation.
 pub(crate) fn derive_nonces<B: Backend>(
     ctx: &[u8],
@@ -176,7 +183,11 @@ pub(crate) fn derive_nonces<B: Backend>(
     label: &[u8],
     instance: &[&[u8]],
     rand: &[u8],
+    count: usize,
 ) -> Result<Zeroizing<Vec<B::Scalar>>, Error> {
+    if rand.len() != NSEED {
+        return Err(Error::InvalidInput);
+    }
     let label_len = u16::try_from(label.len()).map_err(|_| Error::InvalidInput)?;
     let secret_len = u32::try_from(secret.len()).map_err(|_| Error::InvalidInput)?;
     let instance_len = instance.iter().map(|part| part.len()).sum::<usize>();
@@ -186,58 +197,48 @@ pub(crate) fn derive_nonces<B: Backend>(
         secret_len.to_be_bytes(),
         instance_len.to_be_bytes(),
     );
-    let mut parts: Vec<&[u8]> = alloc::vec![&label_len, label, &secret_len, secret, &instance_len];
+    let zeros = [0u8; S_IN_BYTES];
+    let rand_pad = &zeros[..pad_to_block(NSEED)];
+    let secret_pad = &zeros[..pad_to_block(secret_len.len() + secret.len())];
+    let mut parts: Vec<&[u8]> = alloc::vec![
+        rand,
+        rand_pad,
+        &secret_len,
+        secret,
+        secret_pad,
+        &label_len,
+        label,
+        &instance_len,
+    ];
     parts.extend_from_slice(instance);
-    let mut key = [0u8; NH];
-    XmdPrefix::<B::Sha256>::new(&[]).expand_into(&parts, &[b"DeriveNonces-", ctx], &mut key);
-    let nonces = seeds_to_scalars::<B>(ctx, &key, rand);
-    key.zeroize();
-    nonces
+    let mut key = Zeroizing::new([0u8; NH]);
+    XmdPrefix::<B::Sha256>::new(&[]).expand_into(&parts, &[b"DeriveNonces-", ctx], key.as_mut());
+    expand_scalars::<B>(ctx, &key, count)
 }
 
-/// `G.SeedsToScalars(key, rand)`: a four-round Feistel network over all of
-/// `rand`, keyed by `key`, then each `Nseed`-byte piece of the result
-/// reduced modulo the order. The network is a permutation for every key, so
-/// uniform input gives scalars each within about `2^-128` of uniform. With
-/// the round functions modeled as random oracles, a change to any part of an
-/// input chosen without reference to them changes every scalar, except with
-/// negligible probability.
-pub(crate) fn seeds_to_scalars<B: Backend>(
+/// The number of zero bytes `PadToBlock` appends to a value of `len` bytes.
+fn pad_to_block(len: usize) -> usize {
+    (S_IN_BYTES - len % S_IN_BYTES) % S_IN_BYTES
+}
+
+/// `G.ExpandScalars(key, count)`: `HashToScalar(key || I2OSP(i, 4))` under
+/// the tag `"ExpandScalars-" || ctx`, for each `i` below `count`.
+///
+/// Every scalar is computed before a zero one is reported, so the time taken
+/// does not depend on where it occurs.
+pub(crate) fn expand_scalars<B: Backend>(
     ctx: &[u8],
     key: &[u8; NH],
-    rand: &[u8],
+    count: usize,
 ) -> Result<Zeroizing<Vec<B::Scalar>>, Error> {
-    if rand.is_empty() || rand.len() % NSEED != 0 {
-        return Err(Error::InvalidInput);
-    }
-    let half = rand.len() / 2;
-    let mut left = Zeroizing::new(rand[..half].to_vec());
-    let mut right = Zeroizing::new(rand[half..].to_vec());
-    let mut mask = Zeroizing::new(alloc::vec![0u8; half.div_ceil(XMD_LENGTH) * XMD_LENGTH]);
-    for i in 0..4u8 {
-        for (j, chunk) in mask.chunks_exact_mut(XMD_LENGTH).enumerate() {
-            let j = u32::try_from(j).map_err(|_| Error::InvalidInput)?;
-            XmdPrefix::<B::Sha256>::new(&[key, &[i], &j.to_be_bytes(), &right]).expand_into(
-                &[],
-                &[b"SeedsToScalars-", ctx],
-                chunk,
-            );
-        }
-        for (byte, m) in left.iter_mut().zip(mask.iter()) {
-            *byte ^= m;
-        }
-        core::mem::swap(&mut left, &mut right);
-    }
-    // Copy into a buffer allocated at full size, so that no reallocation
-    // frees secret bytes before they are wiped.
-    let mut permuted = Zeroizing::new(Vec::with_capacity(rand.len()));
-    permuted.extend_from_slice(&left);
-    permuted.extend_from_slice(&right);
-    let mut scalars = Zeroizing::new(Vec::with_capacity(permuted.len() / NSEED));
+    let count_bound = u32::try_from(count).map_err(|_| Error::InvalidInput)?;
+    let prefix = XmdPrefix::<B::Sha256>::new(&[key]);
+    let mut scalars = Zeroizing::new(Vec::with_capacity(count));
     let mut result = Ok(());
-    for piece in permuted.chunks_exact(NSEED) {
-        let piece: &[u8; XMD_LENGTH] = piece.try_into().map_err(|_| Error::InvalidInput)?;
-        let scalar = reduce_be_48::<B>(piece);
+    for i in 0..count_bound {
+        let mut uniform = prefix.expand(&[&i.to_be_bytes()], &[b"ExpandScalars-", ctx]);
+        let scalar = reduce_be_48::<B>(&uniform);
+        uniform.zeroize();
         if bool::from(scalar.is_zero()) {
             result = Err(Error::Derive);
         }
