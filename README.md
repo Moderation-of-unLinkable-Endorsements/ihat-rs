@@ -131,8 +131,10 @@ library in `p256` and `getrandom`, and the precomputed generator tables of
   and nullifier, and the redemption's `delta`, index, trapdoors, and first
   openings are handled in constant time and zeroized after use. On the
   `boringssl` backend, point addition takes a separate path when its operands
-  are equal or negatives of each other, which for uniformly random secret
-  operands happens with negligible probability.
+  are equal or negatives of each other, which for a uniformly random secret
+  operand independent of the other happens with negligible probability.
+  Values that fail to decode are not wiped; their bytes remain the caller's
+  to wipe.
 * `respond` consumes the Anchor's state, `finalize` the Client's, and
   `redeem` the Endorsement, so none is used twice within a process. An
   Anchor must also refuse a second challenge for a session it has answered,

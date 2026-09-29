@@ -67,8 +67,10 @@
 //! * Operations on the Anchor's signing key and session state, on the
 //!   Client's blinding factors, and on the redemption's `delta`, Anchor
 //!   index, trapdoors, and openings are constant time with respect to those
-//!   values.
-//! * Secrets are zeroized on drop.
+//!   values, except for BoringSSL point addition of equal or negated
+//!   operands (see [`backend::Point`]).
+//! * Secrets the crate derives or decodes are zeroized on drop. The bytes
+//!   of an encoding that fails to decode remain the caller's to wipe.
 
 // TODO: move the backend, hashing, and derivation layers into a `mole-p256`
 // crate shared with act-rs. `backend` has the names and signatures of

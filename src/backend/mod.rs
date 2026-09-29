@@ -104,8 +104,8 @@ pub trait Scalar:
 /// scalar. Addition is constant time in both operands except where the
 /// operands are equal or negatives of each other: BoringSSL's `EC_POINT_add`
 /// then takes a separate doubling or identity path. Where one operand
-/// depends on a uniformly random secret, that happens with negligible
-/// probability.
+/// depends on a uniformly random secret independent of the other operand,
+/// that happens with negligible probability.
 pub trait Point: Clone + Debug + PartialEq + Eq + Sized {
     /// The associated scalar type.
     type Scalar: Scalar;

@@ -288,17 +288,19 @@ impl<B: Backend> Redemption<B> {
         }
         let mut keys = Reader::new(keys);
         let mut openings = Reader::new(openings);
+        let commitment_keys = (0..q)
+            .map(|_| keys.element::<B>())
+            .collect::<Result<_, _>>()?;
+        let openings = (0..q)
+            .map(|_| openings.scalar::<B>())
+            .collect::<Result<_, _>>()?;
         Ok(Self {
             x_hat,
             shown: (*shown).clone(),
             proof_challenge,
             response,
-            commitment_keys: (0..q)
-                .map(|_| keys.element::<B>())
-                .collect::<Result<_, _>>()?,
-            openings: (0..q)
-                .map(|_| openings.scalar::<B>())
-                .collect::<Result<_, _>>()?,
+            commitment_keys,
+            openings,
         })
     }
 }
