@@ -102,6 +102,7 @@ mod hash;
 mod permutation;
 mod protocol;
 mod random;
+mod storage;
 mod wire;
 
 #[cfg(test)]

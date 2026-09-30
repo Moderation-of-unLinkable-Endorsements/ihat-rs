@@ -54,6 +54,19 @@ draft; a redemption is decoded against the size of the Anchor Set.
 `examples/demo.rs` issues from several Anchors and redeems through the
 encodings.
 
+## Storage boundary
+
+`AnchorState` and `ClientState` also have `to_bytes` and `from_bytes`, so a
+session can span processes. These are local formats, not in the draft and
+never sent over the network, prefixed with `AnchorState-` or `ClientState-`
+and the protocol context. They perform no I/O, encryption, or authentication.
+
+Whoever can replay or modify a stored `AnchorState` recovers the signing key
+(Section 5.3 of the draft). The application must authenticate it, for
+example with an AEAD bound to the session identifier, and atomically claim
+the session before `respond`, keeping a tombstone even on failure. Decoding a
+copy does not make consumed state usable again.
+
 ## Backends
 
 All group and hash operations go through the [`Backend`](src/backend/mod.rs)

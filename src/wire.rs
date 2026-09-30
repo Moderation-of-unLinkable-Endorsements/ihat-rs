@@ -25,32 +25,32 @@ const SIGNATURE_LENGTH: usize = 4 * SCALAR_LENGTH + NULLIFIER_LENGTH;
 /// Length of an encoded response.
 const RESPONSE_LENGTH: usize = 3 * SCALAR_LENGTH;
 
-struct Reader<'a> {
+pub(crate) struct Reader<'a> {
     data: &'a [u8],
     offset: usize,
 }
 
 impl<'a> Reader<'a> {
-    fn new(data: &'a [u8]) -> Self {
+    pub(crate) fn new(data: &'a [u8]) -> Self {
         Self { data, offset: 0 }
     }
 
-    fn take(&mut self, length: usize) -> Result<&'a [u8], Error> {
+    pub(crate) fn take(&mut self, length: usize) -> Result<&'a [u8], Error> {
         let end = self.offset.checked_add(length).ok_or(Error::Deserialize)?;
         let slice = self.data.get(self.offset..end).ok_or(Error::Deserialize)?;
         self.offset = end;
         Ok(slice)
     }
 
-    fn array<const N: usize>(&mut self) -> Result<&'a [u8; N], Error> {
+    pub(crate) fn array<const N: usize>(&mut self) -> Result<&'a [u8; N], Error> {
         self.take(N)?.try_into().map_err(|_| Error::Deserialize)
     }
 
-    fn element<B: Backend>(&mut self) -> Result<B::Point, Error> {
+    pub(crate) fn element<B: Backend>(&mut self) -> Result<B::Point, Error> {
         require(B::Point::from_bytes(self.array()?), Error::Deserialize)
     }
 
-    fn scalar<B: Backend>(&mut self) -> Result<B::Scalar, Error> {
+    pub(crate) fn scalar<B: Backend>(&mut self) -> Result<B::Scalar, Error> {
         require(B::Scalar::from_bytes(self.array()?), Error::Deserialize)
     }
 
@@ -70,7 +70,7 @@ impl<'a> Reader<'a> {
     }
 
     /// An `opaque value<V>`.
-    fn vector(&mut self) -> Result<&'a [u8], Error> {
+    pub(crate) fn vector(&mut self) -> Result<&'a [u8], Error> {
         let length = self.length()?;
         self.take(length)
     }
@@ -93,7 +93,7 @@ impl<'a> Reader<'a> {
         Ok(signature)
     }
 
-    fn finish(self) -> Result<(), Error> {
+    pub(crate) fn finish(self) -> Result<(), Error> {
         if self.offset == self.data.len() {
             Ok(())
         } else {
@@ -119,7 +119,7 @@ fn length_prefix(value: usize) -> Vec<u8> {
 }
 
 /// Appends `opaque value<V>`.
-fn put_vector(out: &mut Vec<u8>, value: &[u8]) {
+pub(crate) fn put_vector(out: &mut Vec<u8>, value: &[u8]) {
     out.extend_from_slice(&length_prefix(value.len()));
     out.extend_from_slice(value);
 }
