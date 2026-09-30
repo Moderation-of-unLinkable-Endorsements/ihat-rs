@@ -300,7 +300,7 @@ secret_record!(Endorsement { ; ; signature });
 // ---------------------------------------------------------------------------
 
 /// `I2OSP(len(value), 2)`, the prefix of `U16Prefixed(value)`.
-fn u16_prefix(value: &[u8]) -> Result<[u8; 2], Error> {
+pub(crate) fn u16_prefix(value: &[u8]) -> Result<[u8; 2], Error> {
     u16::try_from(value.len())
         .map(u16::to_be_bytes)
         .map_err(|_| Error::InvalidInput)
