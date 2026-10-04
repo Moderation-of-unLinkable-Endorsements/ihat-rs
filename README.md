@@ -187,10 +187,12 @@ and RFC 9380 known answers for the primitives.
 
 Continuous integration (`.github/workflows/ci.yml`) runs format, clippy with
 warnings denied, tests and docs on both backends, the feature powerset, the
-library on the minimum Rust version (1.85), 32-bit and wasm targets, and
-unused-dependency and `cargo deny` checks. A weekly workflow
-(`.github/workflows/nightly.yml`) runs Miri over the pure-Rust primitives,
-mutation testing, and coverage.
+library on the minimum Rust version (1.85), 32-bit and wasm targets,
+unused-dependency and `cargo deny` checks, and mutation testing of the lines
+each change touches. A weekly workflow (`.github/workflows/nightly.yml`) runs
+Miri over the pure-Rust primitives and coverage; on demand, it also runs
+mutation testing of whole modules. `.cargo/mutants.toml` lists what mutation
+testing skips, and why.
 
 ## License
 

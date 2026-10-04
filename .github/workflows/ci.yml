@@ -110,3 +110,24 @@ jobs:
       - run: cargo test --no-default-features --features boringssl --config boringssl/cargo-config.toml
       - run: cargo test --features rustcrypto,boringssl --config boringssl/cargo-config.toml
       - run: cargo clippy --all-targets --features rustcrypto,boringssl --config boringssl/cargo-config.toml -- -D warnings
+
+  mutants:
+    name: Mutation testing (changed lines)
+    runs-on: ubuntu-latest
+    env:
+      # Mutants often leave a binding unused; denying warnings would discard
+      # them as unviable instead of testing them.
+      RUSTFLAGS: ""
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: taiki-e/install-action@cargo-mutants
+      - uses: Swatinem/rust-cache@v2
+      - run: git diff "$BASE" HEAD > "$RUNNER_TEMP/change.diff"
+        env:
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+      # Fails if any viable mutant of a changed line survives the test suite,
+      # apart from the exclusions in .cargo/mutants.toml.
+      - run: cargo mutants --in-diff "$RUNNER_TEMP/change.diff" -j 2 --timeout 300

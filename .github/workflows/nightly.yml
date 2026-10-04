@@ -15,8 +15,9 @@
 name: Deep checks
 
 # Slower checks that do not need to run on every commit: Miri over the
-# pure-Rust paths, mutation testing of the proof, permutation, and encoding
-# modules, and coverage.
+# pure-Rust paths and coverage, weekly, and mutation testing of the proof,
+# permutation, encoding, and storage modules, on demand. CI mutates the lines
+# each change touches.
 
 on:
   schedule:
@@ -48,15 +49,19 @@ jobs:
           MIRIFLAGS: -Zmiri-disable-isolation
 
   mutants:
-    name: Mutation testing (proofs, permutation, and encodings)
+    name: Mutation testing (proofs, permutation, encodings, and storage)
+    # Unchanged code gives the same result every week; run this before
+    # releases and spec updates instead.
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: taiki-e/install-action@cargo-mutants
       - uses: Swatinem/rust-cache@v2
-      # Fails if any viable mutant survives the test suite.
-      - run: cargo mutants -f src/protocol.rs -f src/commitment.rs -f src/permutation.rs -f src/hash.rs -f src/wire.rs -j 2 --timeout 300
+      # Fails if any viable mutant survives the test suite, apart from the
+      # exclusions in .cargo/mutants.toml.
+      - run: cargo mutants -f src/protocol.rs -f src/commitment.rs -f src/permutation.rs -f src/hash.rs -f src/wire.rs -f src/storage.rs -j 2 --timeout 300
 
   coverage:
     name: Coverage
