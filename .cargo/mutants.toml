@@ -1,0 +1,60 @@
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Configuration for `cargo mutants`. CI mutates the lines each change touches,
+# and the Deep checks workflow mutates whole modules on demand.
+
+# The BoringSSL backend builds only with the `boringssl` feature, which needs
+# a BoringSSL checkout, so the default build never compiles its mutants.
+exclude_globs = ["src/backend/boringssl.rs"]
+
+# Mutants that no test can kill. Patterns name the mutated operator, and a
+# column where a function has several alike, so the other mutants still run.
+exclude_re = [
+    # Wiping secrets, redacting them from `Debug` output, and reserving
+    # capacity before writing them have no observable effect.
+    "replace <impl Drop for SecretKey<B>>::drop with",
+    "replace <impl Zeroize for Signature<B>>::zeroize with",
+    "replace <impl fmt::Debug for SecretKey<B>>::fmt",
+    "replace [+*] with [-+*/] in (Anchor|Client)State<B>::to_bytes$",
+    # `|` and `^` agree when no bit is set on both sides: a byte is not both
+    # 0 and 1, a shifted value has no low byte, and a length is below its
+    # form's tag bits.
+    "replace [|] with \\^ in is_valid_permutation_encoding$",
+    "replace [|] with \\^ in (Reader<'a>::length|length_prefix)$",
+    # Both `c` and `y` zero needs `c` to hash to zero; both `A` and `C` the
+    # identity needs the discrete logarithm of `Z`.
+    "replace [|] with \\^ in verify_signature$",
+    # The carried node of `vec_equivocate` has no partner, so its shift is
+    # already zero.
+    "^src/commitment.rs:[0-9]+:45: replace - with [+/] in vec_equivocate$",
+    # `pad_to_block` only ever pads less than one block, where adding the
+    # block size and reducing by it agree.
+    "^src/hash.rs:[0-9]+:23: replace % with [+] in pad_to_block$",
+    # A session identifier near `MAX_SESSION_ID` (2^62 bytes) cannot be
+    # allocated.
+    "^src/protocol.rs:24:[0-9]+: replace - with [+/]$",
+    "replace > with (==|>=) in commit_with$",
+    # `prove_issuer` rejects an index outside the Anchor Set with the same
+    # error, and an Anchor Set of 65535 keys takes minutes to redeem in a
+    # debug build.
+    "replace [|][|] with && in redeem_with$",
+    "replace > with (==|>=) in redeem_with$",
+    # Breaking a round or the validity check can stop the permutation walk
+    # from terminating. Whether the tests fail first or time out depends on
+    # their random keys.
+    "replace \\^= with [|&]= in (left|right)_round$",
+    "replace [|] with & in is_valid_permutation_encoding$",
+    "replace from_encoding -> Option<B::Point> with None$",
+]
