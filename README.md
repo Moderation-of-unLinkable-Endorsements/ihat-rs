@@ -99,7 +99,7 @@ this crate is tested against (`5112448a`, September 2026, the same as
 act-rs) and writes a Cargo config with the patch:
 
 ```sh
-cargo install bindgen-cli          # plus git, cmake, ninja, a C++ compiler
+cargo install bindgen-cli          # plus git, cmake, ninja, and clang
 scripts/build-boringssl.sh         # clones and builds into ./boringssl
 
 export BORINGSSL_BUILD_DIR=$PWD/boringssl/build
