@@ -1,9 +1,14 @@
 //! Known answers and properties of the primitives beneath the protocol.
 
+use alloc::vec::Vec;
+
 use subtle::Choice;
 
-use crate::backend::{Backend, FIELD_MODULUS, Point, SCALAR_LENGTH, Scalar};
-use crate::commitment::depth;
+use crate::Error;
+use crate::backend::{Backend, FIELD_MODULUS, POINT_LENGTH, Point, SCALAR_LENGTH, Scalar};
+use crate::commitment::{
+    Node, commit_val_at_place, depth, generate_vec_bind, hash_node, vec_commit, vec_equivocate,
+};
 use crate::hash::{self, XmdPrefix};
 use crate::permutation::{
     is_valid_permutation_encoding, p, p_inv, permutation_pair, permute_bytes, select_bytes,
@@ -237,6 +242,53 @@ fn derivations<B: Backend>() {
     assert!(hash::hash_to_group::<B>(CTX, &[b"x"]).is_ok());
 }
 
+/// Three leaves take two levels. A third key, trapdoor, or opening would
+/// let the tree reach its root a level early, so each is rejected.
+fn commitment_lengths<B: Backend>() {
+    let index = 1;
+    let trapdoors = [2, 3, 5].map(B::Scalar::from);
+    let openings = [7, 11, 13].map(B::Scalar::from);
+    let keys = generate_vec_bind::<B>(index, &trapdoors).unwrap();
+    let leaves: Vec<Node> = (0..3).map(|i| [i; POINT_LENGTH]).collect();
+    let invalid = Some(Error::InvalidInput);
+
+    vec_commit::<B>(&leaves, &keys[..2], &openings[..2], Error::Derive).unwrap();
+    for (keys, openings) in [(&keys[..], &openings[..]), (&keys[..2], &openings[..])] {
+        assert_eq!(
+            vec_commit::<B>(&leaves, keys, openings, Error::Derive).err(),
+            invalid
+        );
+    }
+
+    let first = commit_val_at_place::<B>(&keys[..2], 3, index, &leaves[1], &openings[..2]).unwrap();
+    for (keys, openings) in [(&keys[..], &openings[..]), (&keys[..2], &openings[..])] {
+        assert_eq!(
+            commit_val_at_place::<B>(keys, 3, index, &leaves[1], openings).err(),
+            invalid
+        );
+    }
+
+    let new = || leaves.iter().map(|leaf| hash_node::<B>(leaf)).collect();
+    vec_equivocate(
+        &first,
+        &keys[..2],
+        &trapdoors[..2],
+        &openings[..2],
+        new(),
+        index,
+    )
+    .unwrap();
+    for (trapdoors, openings) in [
+        (&trapdoors[..], &openings[..2]),
+        (&trapdoors[..2], &openings[..]),
+    ] {
+        assert_eq!(
+            vec_equivocate(&first, &keys[..2], trapdoors, openings, new(), index).err(),
+            invalid
+        );
+    }
+}
+
 #[test]
 fn depths() {
     let expected = [
@@ -263,6 +315,7 @@ backend_tests!(
     x_coordinate_test,
     permutation_properties,
     derivations,
+    commitment_lengths,
 );
 
 /// With both backends enabled, every output must agree.

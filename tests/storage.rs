@@ -56,6 +56,9 @@ fn restored_continuations_complete_and_reject_malformed_blobs() {
         assert!(!ok(&bad));
         bad[start..].fill(0);
         assert!(!ok(&bad));
+        // Two zero scalars, which must not cancel out.
+        bad[start - 32..].fill(0);
+        assert!(!ok(&bad));
     }
 
     let mut bad = c.to_vec();
