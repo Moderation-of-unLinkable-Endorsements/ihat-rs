@@ -118,6 +118,20 @@ fn length_prefix(value: usize) -> Vec<u8> {
     }
 }
 
+#[cfg(test)]
+pub(crate) fn length_prefix_for_tests(value: usize) -> Vec<u8> {
+    length_prefix(value)
+}
+
+/// Decodes a variable-length integer that is all of `bytes`.
+#[cfg(test)]
+pub(crate) fn length_for_tests(bytes: &[u8]) -> Result<usize, Error> {
+    let mut reader = Reader::new(bytes);
+    let length = reader.length()?;
+    reader.finish()?;
+    Ok(length)
+}
+
 /// Appends `opaque value<V>`.
 pub(crate) fn put_vector(out: &mut Vec<u8>, value: &[u8]) {
     out.extend_from_slice(&length_prefix(value.len()));

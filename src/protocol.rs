@@ -932,3 +932,14 @@ pub(crate) fn delta_for_tests<B: Backend>(rand: &[u8]) -> B::Scalar {
         .map(|scalars| scalars[0])
         .unwrap_or_default()
 }
+
+#[cfg(test)]
+pub(crate) fn compute_challenge_for_tests<B: Backend>(
+    ctx_iss: &[u8],
+    a: &B::Point,
+    c: &B::Point,
+    nf: &[u8; NULLIFIER_LENGTH],
+    ctx_red: &[u8],
+) -> Result<B::Scalar, Error> {
+    compute_challenge::<B>(ctx_iss, a, c, nf, ctx_red)
+}

@@ -8,9 +8,10 @@ use crate::Error;
 use crate::backend::{Backend, POINT_LENGTH, Point, SCALAR_LENGTH, Scalar};
 use crate::protocol::{
     ChallengeMessage, CommitMessage, Endorsement, PublicKey, Redemption, ResponseMessage,
-    SecretKey, Signature, challenge_with, commit_with, finalize, redeem_with, respond, verify,
-    verify_redemption,
+    SecretKey, Signature, challenge_with, commit_with, compute_challenge_for_tests, finalize,
+    redeem_with, respond, verify, verify_redemption,
 };
+use crate::wire::{length_for_tests, length_prefix_for_tests};
 
 const CTX_ISS: &[u8] = b"issuance context";
 const CTX_RED: &[u8] = b"redemption context";
@@ -305,6 +306,28 @@ fn issuance_rejections<B: Backend>() {
         verify(&x.public_key(), &forged, CTX_ISS, CTX_RED).unwrap_err(),
         Error::Verify
     );
+
+    // With `y = 0`, `A = s * B` and `C = t * B` do not involve the key, so
+    // hashing them to `c` gives a signature that passes every other check
+    // under every key.
+    let (s, t, nf) = (B::Scalar::from(3), B::Scalar::from(5), [0; 32]);
+    let a = B::Point::mul_generator(&s);
+    let c = B::Point::mul_generator(&t);
+    let forged = Endorsement::<B> {
+        signature: Signature {
+            c: compute_challenge_for_tests::<B>(CTX_ISS, &a, &c, &nf, CTX_RED).unwrap(),
+            s,
+            y: B::Scalar::default(),
+            t,
+            nf,
+        },
+    };
+    for key in &public {
+        assert_eq!(
+            verify(key, &forged, CTX_ISS, CTX_RED).unwrap_err(),
+            Error::Verify
+        );
+    }
 }
 
 fn input_limits<B: Backend>() {
@@ -464,6 +487,44 @@ fn encodings<B: Backend>() {
     let mut longer = encoded.clone();
     longer.push(0);
     assert!(Redemption::<B>::from_bytes(&longer, 3).is_err());
+
+    // One commitment key or opening too many, with the other vector intact.
+    let mut extra_key = redemption.clone();
+    extra_key.commitment_keys.push(B::Point::generator());
+    let mut extra_opening = redemption.clone();
+    extra_opening.openings.push(B::Scalar::from(1));
+    for extra in [extra_key, extra_opening] {
+        assert_eq!(
+            Redemption::<B>::from_bytes(&extra.to_bytes(), 3).unwrap_err(),
+            Error::Deserialize
+        );
+    }
+}
+
+#[test]
+fn length_prefixes() {
+    // Each form at both ends of its range.
+    for (value, length) in [
+        (0, 1),
+        (63, 1),
+        (64, 2),
+        (16383, 2),
+        (16384, 4),
+        ((1 << 30) - 1, 4),
+        (1 << 30, 8),
+    ] {
+        let encoded = length_prefix_for_tests(value);
+        assert_eq!(encoded.len(), length, "{value}");
+        assert_eq!(length_for_tests(&encoded).unwrap(), value);
+    }
+    // The largest value of each shorter form, in the next longer one.
+    for encoded in [
+        &[0x40, 0x3f][..],
+        &[0x80, 0x00, 0x3f, 0xff],
+        &[0xc0, 0x00, 0x00, 0x00, 0x3f, 0xff, 0xff, 0xff],
+    ] {
+        assert_eq!(length_for_tests(encoded).unwrap_err(), Error::Deserialize);
+    }
 }
 
 fn identity_public_keys_are_rejected<B: Backend>() {
