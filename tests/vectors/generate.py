@@ -1,9 +1,8 @@
 """Generate the extended Rollatini test vectors from the draft's reference
 implementation, in the draft's `key = value` format.
 
-Run from the `poc/` directory of the internet-drafts repository at commit
-03d3069fd0a4080b8c3d7ba026f63178796adfe8, with its virtual environment set
-up as its README describes:
+Run from the `poc/` directory of the internet-drafts repository, with its
+virtual environment set up as its README describes:
 
     .venv/bin/python /path/to/generate.py > extended.txt
 
