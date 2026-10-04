@@ -1,9 +1,8 @@
 # Test vectors
 
-`draft.txt` is the Test Vectors section of draft-authors-mole-rollatini at
-commit 03d3069fd0a4080b8c3d7ba026f63178796adfe8, with the fences and headings
-removed. `extended.txt` was generated from the draft's Python reference
-implementation at the same commit by `generate.py`, which documents the
+`draft.txt` is the Test Vectors section of draft-authors-mole-rollatini, with
+the fences and headings removed. `extended.txt` was generated from the draft's
+Python reference implementation by `generate.py`, which documents the
 invocation: it holds the same entries from a different random stream, with
 redemptions against Anchor Sets of 2, 3, 4, 6, 7, 8, 9, 16, 33, and 1 keys,
 and `perm<i>` entries giving `P` and `Pinv` of eight derived points.

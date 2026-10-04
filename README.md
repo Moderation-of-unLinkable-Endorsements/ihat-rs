@@ -13,9 +13,8 @@ Anchor Set, that the key is a shift of one of the Anchor Set's keys. The
 Moderator learns the Endorsement's nullifier, which it uses to reject a second
 redemption, and nothing about which Anchor issued it.
 
-The implementation tracks the draft at commit
-[`03d3069`](https://github.com/Moderation-of-unLinkable-Endorsements/internet-drafts/commit/03d3069fd0a4080b8c3d7ba026f63178796adfe8)
-of the drafts repository and reproduces its test vectors byte for byte.
+The implementation tracks the draft and reproduces its test vectors byte for
+byte.
 
 > **Warning:** This code has not been audited. Use it at your own risk.
 
