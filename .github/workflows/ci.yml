@@ -29,7 +29,7 @@ jobs:
     name: Test, lint, docs (RustCrypto)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
@@ -44,7 +44,7 @@ jobs:
     name: Feature powerset
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - uses: taiki-e/install-action@cargo-hack
       - uses: Swatinem/rust-cache@v2
@@ -55,7 +55,7 @@ jobs:
     name: Minimum supported Rust (library)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@1.85.0
       - uses: Swatinem/rust-cache@v2
       # Dev-dependencies need a newer toolchain; the library itself builds here.
@@ -65,7 +65,7 @@ jobs:
     name: Other targets
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: i686-unknown-linux-gnu, wasm32-unknown-unknown
@@ -78,7 +78,7 @@ jobs:
     name: Dependencies
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - uses: taiki-e/install-action@cargo-machete
       - run: cargo machete
@@ -90,7 +90,7 @@ jobs:
     env:
       BORINGSSL_BUILD_DIR: ${{ github.workspace }}/boringssl/build
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
@@ -99,12 +99,16 @@ jobs:
       - uses: taiki-e/install-action@v2
         with:
           tool: bindgen-cli
+      # A new runner image rebuilds BoringSSL rather than restoring a build
+      # made on the old one. `ImageOS` is set on the runner, not in `env`.
+      - id: image
+        run: echo "os=$ImageOS" >> "$GITHUB_OUTPUT"
       - name: Cache the BoringSSL build
         id: boringssl-cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: boringssl
-          key: boringssl-${{ runner.os }}-${{ hashFiles('scripts/build-boringssl.sh') }}
+          key: boringssl-${{ steps.image.outputs.os }}-${{ hashFiles('scripts/build-boringssl.sh') }}
       - if: steps.boringssl-cache.outputs.cache-hit != 'true'
         run: scripts/build-boringssl.sh
       - run: cargo test --no-default-features --features boringssl --config boringssl/cargo-config.toml
@@ -119,7 +123,7 @@ jobs:
       # them as unviable instead of testing them.
       RUSTFLAGS: ""
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
       - uses: dtolnay/rust-toolchain@stable

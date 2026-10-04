@@ -37,7 +37,11 @@ fi
 git -C "$DIR" fetch --quiet origin "$COMMIT"
 git -C "$DIR" checkout --quiet "$COMMIT"
 
-cmake -S "$DIR" -B "$DIR/build" -GNinja -DCMAKE_BUILD_TYPE=Release -DRUST_BINDINGS="$HOST"
+# Clang is BoringSSL's primary compiler, and bindgen already needs LLVM. GCC 15
+# reports a false stringop-overflow in its Keccak code, which -Werror makes fatal.
+cmake -S "$DIR" -B "$DIR/build" -GNinja -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_C_COMPILER="${CC:-clang}" -DCMAKE_CXX_COMPILER="${CXX:-clang++}" \
+  -DRUST_BINDINGS="$HOST"
 ninja -C "$DIR/build" crypto ssl rust_wrapper bssl_sys
 
 ABS=$(cd "$DIR" && pwd)
