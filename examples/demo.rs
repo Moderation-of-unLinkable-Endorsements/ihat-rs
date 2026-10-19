@@ -2,8 +2,9 @@
 //! whose Anchor Set lists them all, printing the message sizes.
 
 use rollatini::{
-    ChallengeMessage, CommitMessage, Endorsement, PublicKey, Redemption, ResponseMessage,
-    SecretKey, challenge, commit, finalize, redeem, respond, verify, verify_redemption,
+    ChallengeMessage, CommitMessage, Endorsement, NULLIFIER_LENGTH, PublicKey, Redemption,
+    ResponseMessage, SecretKey, challenge, commit, finalize, redeem, respond, verify,
+    verify_redemption,
 };
 
 fn main() -> Result<(), rollatini::Error> {
@@ -23,8 +24,8 @@ fn main() -> Result<(), rollatini::Error> {
         let public_key = anchor.public_key();
 
         // Issuance, through the wire encodings.
-        let session_id = format!("session-{index}");
-        let (state, commitment) = commit(ctx_iss, session_id.as_bytes())?;
+        let session_id = [index as u8; NULLIFIER_LENGTH];
+        let (state, commitment) = commit(ctx_iss, &session_id)?;
         let commitment = CommitMessage::from_bytes(&commitment.to_bytes())?;
         let (client, challenge_message) = challenge(&public_key, ctx_iss, ctx_red, &commitment)?;
         let challenge_message = ChallengeMessage::from_bytes(&challenge_message.to_bytes())?;

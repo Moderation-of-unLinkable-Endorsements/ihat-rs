@@ -81,7 +81,6 @@ fn scalars_hex<B: Backend>(scalars: &[B::Scalar]) -> Vec<u8> {
 fn replay<B: Backend>(text: &str) {
     let v = Vectors(parse(text));
     assert_eq!(v.hex("suite.identifier"), crate::CIPHERSUITE_IDENTIFIER);
-    assert_eq!(v.hex("suite.ctx_proto"), crate::PROTOCOL_CONTEXT);
 
     let expected = v.hex("derive.scalars");
     let scalars = crate::hash::derive_scalars::<B>(

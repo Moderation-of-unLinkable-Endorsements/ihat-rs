@@ -29,7 +29,8 @@ let ctx_iss = b"epoch-42";                           // agreed out of band
 let ctx_red = b"moderator.example";                  // chosen by the Client
 
 // Issuance: Commit, Challenge, Respond, Finalize.
-let (anchor_state, commitment) = rollatini::commit(ctx_iss, b"session-1")?;
+let session_id = [0x53; rollatini::NULLIFIER_LENGTH];
+let (anchor_state, commitment) = rollatini::commit(ctx_iss, &session_id)?;
 let (client_state, challenge) =
     rollatini::challenge(&public_key, ctx_iss, ctx_red, &commitment)?;
 let response = rollatini::respond(&secret_key, anchor_state, &challenge)?;
@@ -49,7 +50,8 @@ let nf = rollatini::verify_redemption(&anchor_set, &redemption, ctx_iss, ctx_red
 
 `CommitMessage`, `ChallengeMessage`, `ResponseMessage`, `Endorsement`, and
 `Redemption` have `to_bytes` and `from_bytes` with the encodings of the
-draft; a redemption is decoded against the size of the Anchor Set.
+draft. Session identifiers are exactly 32 bytes, and a redemption is decoded
+against the size of the Anchor Set.
 `examples/demo.rs` issues from several Anchors and redeems through the
 encodings.
 

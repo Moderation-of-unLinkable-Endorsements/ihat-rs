@@ -4,7 +4,6 @@
 use alloc::vec::Vec;
 
 use super::{Replay, os_rng};
-use crate::Error;
 use crate::backend::{Backend, POINT_LENGTH, Point, SCALAR_LENGTH, Scalar};
 use crate::protocol::{
     ChallengeMessage, CommitMessage, Endorsement, PublicKey, Redemption, ResponseMessage,
@@ -12,10 +11,12 @@ use crate::protocol::{
     redeem_with, respond, verify, verify_redemption,
 };
 use crate::wire::{length_for_tests, length_prefix_for_tests};
+use crate::{Error, NULLIFIER_LENGTH};
 
 const CTX_ISS: &[u8] = b"issuance context";
 const CTX_RED: &[u8] = b"redemption context";
 const DIGEST: &[u8] = b"challenge digest";
+const SESSION_ID: [u8; NULLIFIER_LENGTH] = [0x53; NULLIFIER_LENGTH];
 
 fn keys<B: Backend>(n: usize) -> (Vec<SecretKey<B>>, Vec<PublicKey<B>>) {
     let secret: Vec<SecretKey<B>> = (0..n)
@@ -27,7 +28,8 @@ fn keys<B: Backend>(n: usize) -> (Vec<SecretKey<B>>, Vec<PublicKey<B>>) {
 
 fn issue<B: Backend>(key: &SecretKey<B>, ctx_iss: &[u8], ctx_red: &[u8]) -> Endorsement<B> {
     let public_key = key.public_key();
-    let (state, commitment) = commit_with::<B, _>(ctx_iss, b"sid", &mut os_rng::<B>()).unwrap();
+    let (state, commitment) =
+        commit_with::<B, _>(ctx_iss, &SESSION_ID, &mut os_rng::<B>()).unwrap();
     let (client, challenge) = challenge_with(
         &public_key,
         ctx_iss,
@@ -221,19 +223,21 @@ fn issuance_rejections<B: Backend>() {
     let mut rng = os_rng::<B>();
 
     // A challenge for another session.
-    let (state, commitment) = commit_with::<B, _>(CTX_ISS, b"one", &mut rng).unwrap();
+    let first_session = [1u8; NULLIFIER_LENGTH];
+    let second_session = [2u8; NULLIFIER_LENGTH];
+    let (state, commitment) = commit_with::<B, _>(CTX_ISS, &first_session, &mut rng).unwrap();
     let (_, mut challenge) =
         challenge_with(&public[0], CTX_ISS, CTX_RED, &commitment, &mut rng).unwrap();
-    challenge.session_id = b"two".to_vec();
+    challenge.session_id = second_session;
     assert_eq!(
         respond(&secret[0], state, &challenge).unwrap_err(),
         Error::Session
     );
 
     // A zero challenge.
-    let (state, _) = commit_with::<B, _>(CTX_ISS, b"one", &mut rng).unwrap();
+    let (state, _) = commit_with::<B, _>(CTX_ISS, &first_session, &mut rng).unwrap();
     let zero = ChallengeMessage::<B> {
-        session_id: b"one".to_vec(),
+        session_id: first_session,
         challenge: B::Scalar::default(),
     };
     assert_eq!(
@@ -245,7 +249,7 @@ fn issuance_rejections<B: Backend>() {
     // the key.
     let one = B::Scalar::from(1);
     for case in 0..5 {
-        let (state, commitment) = commit_with::<B, _>(CTX_ISS, b"sid", &mut rng).unwrap();
+        let (state, commitment) = commit_with::<B, _>(CTX_ISS, &SESSION_ID, &mut rng).unwrap();
         let ctx_iss = if case == 3 {
             b"other".as_slice()
         } else {
@@ -335,10 +339,20 @@ fn input_limits<B: Backend>() {
     let mut rng = os_rng::<B>();
     let long = alloc::vec![0u8; 65536];
     assert_eq!(
-        commit_with::<B, _>(&long, b"sid", &mut rng).unwrap_err(),
+        commit_with::<B, _>(&long, &SESSION_ID, &mut rng).unwrap_err(),
         Error::InvalidInput
     );
-    let (_, commitment) = commit_with::<B, _>(CTX_ISS, b"sid", &mut rng).unwrap();
+    for session_id in [
+        &[][..],
+        &[0u8; NULLIFIER_LENGTH - 1],
+        &[0u8; NULLIFIER_LENGTH + 1],
+    ] {
+        assert_eq!(
+            commit_with::<B, _>(CTX_ISS, session_id, &mut rng).unwrap_err(),
+            Error::InvalidInput
+        );
+    }
+    let (_, commitment) = commit_with::<B, _>(CTX_ISS, &SESSION_ID, &mut rng).unwrap();
     assert_eq!(
         challenge_with(&public[0], &long, CTX_RED, &commitment, &mut rng).unwrap_err(),
         Error::InvalidInput
@@ -386,11 +400,11 @@ fn keys_encode<B: Backend>() {
 fn encodings<B: Backend>() {
     let (secret, public) = keys::<B>(3);
     let mut rng = os_rng::<B>();
-    let session_id = [9u8; 64];
+    let session_id = [9u8; NULLIFIER_LENGTH];
     let (state, commitment) = commit_with::<B, _>(CTX_ISS, &session_id, &mut rng).unwrap();
     let encoded = commitment.to_bytes();
-    // A 64-byte identifier takes a two-byte length prefix.
-    assert_eq!(&encoded[..2], &[0x40, 64]);
+    assert_eq!(encoded.len(), CommitMessage::<B>::LENGTH);
+    assert_eq!(&encoded[..NULLIFIER_LENGTH], &session_id);
     assert_eq!(
         CommitMessage::<B>::from_bytes(&encoded).unwrap(),
         commitment
@@ -399,6 +413,7 @@ fn encodings<B: Backend>() {
         challenge_with(&public[0], CTX_ISS, CTX_RED, &commitment, &mut rng).unwrap();
     assert_eq!(challenge.session_id(), session_id);
     let encoded = challenge.to_bytes();
+    assert_eq!(encoded.len(), ChallengeMessage::<B>::LENGTH);
     assert_eq!(
         ChallengeMessage::<B>::from_bytes(&encoded)
             .unwrap()
@@ -441,21 +456,23 @@ fn encodings<B: Backend>() {
         assert!(!decodes(&longer));
     }
 
-    // A length prefix that is not the shortest.
-    let mut long_prefix = alloc::vec![0x40, 3];
-    long_prefix.extend_from_slice(b"sid");
-    long_prefix.extend_from_slice(&commitment.to_bytes()[2 + 64..]);
+    // The superseded length-prefixed session identifier is rejected.
+    let mut old_commitment = alloc::vec![NULLIFIER_LENGTH as u8];
+    old_commitment.extend_from_slice(&commitment.to_bytes());
     assert_eq!(
-        CommitMessage::<B>::from_bytes(&long_prefix).unwrap_err(),
+        CommitMessage::<B>::from_bytes(&old_commitment).unwrap_err(),
         Error::Deserialize
     );
-    let mut short_prefix = alloc::vec![3];
-    short_prefix.extend_from_slice(&long_prefix[2..]);
-    assert!(CommitMessage::<B>::from_bytes(&short_prefix).is_ok());
+    let mut old_challenge = alloc::vec![NULLIFIER_LENGTH as u8];
+    old_challenge.extend_from_slice(&challenge.to_bytes());
+    assert_eq!(
+        ChallengeMessage::<B>::from_bytes(&old_challenge).unwrap_err(),
+        Error::Deserialize
+    );
 
     // The identity and non-canonical scalars.
-    let mut identity = short_prefix.clone();
-    identity[4..4 + POINT_LENGTH].fill(0);
+    let mut identity = commitment.to_bytes();
+    identity[NULLIFIER_LENGTH..NULLIFIER_LENGTH + POINT_LENGTH].fill(0);
     assert_eq!(
         CommitMessage::<B>::from_bytes(&identity).unwrap_err(),
         Error::Deserialize
@@ -536,7 +553,8 @@ fn identity_public_keys_are_rejected<B: Backend>() {
     let mut zeroized = SecretKey::<B>::generate_with(&mut os_rng::<B>()).unwrap();
     zeroized.zeroize();
     let identity = zeroized.public_key();
-    let (state, commitment) = commit_with::<B, _>(CTX_ISS, b"sid", &mut os_rng::<B>()).unwrap();
+    let (state, commitment) =
+        commit_with::<B, _>(CTX_ISS, &SESSION_ID, &mut os_rng::<B>()).unwrap();
     assert_eq!(
         challenge_with(&identity, CTX_ISS, CTX_RED, &commitment, &mut os_rng::<B>()).unwrap_err(),
         Error::Verify

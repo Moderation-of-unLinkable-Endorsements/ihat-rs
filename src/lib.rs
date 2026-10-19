@@ -27,7 +27,8 @@
 //!
 //! // Issuance: the Anchor commits, the Client challenges, the Anchor
 //! // responds, and the Client finalizes an Endorsement.
-//! let (anchor_state, commitment) = rollatini::commit(ctx_iss, b"session-1")?;
+//! let session_id = [0x53; rollatini::NULLIFIER_LENGTH];
+//! let (anchor_state, commitment) = rollatini::commit(ctx_iss, &session_id)?;
 //! let (client_state, challenge) =
 //!     rollatini::challenge(&public_key, ctx_iss, ctx_red, &commitment)?;
 //! let response = rollatini::respond(&secret_key, anchor_state, &challenge)?;

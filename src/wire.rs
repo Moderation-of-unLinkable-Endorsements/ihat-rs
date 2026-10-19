@@ -146,12 +146,16 @@ fn put_signature<B: Backend>(out: &mut Vec<u8>, signature: &Signature<B>) {
 }
 
 impl<B: Backend> CommitMessage<B> {
-    /// Encodes as `opaque session_id<V> || Element A || Element C`.
+    /// The encoded length: `Nn + 2 * Ne`.
+    pub const LENGTH: usize = NULLIFIER_LENGTH + 2 * POINT_LENGTH;
+
+    /// Encodes as `opaque session_id[Nn] || Element A || Element C`.
     pub fn to_bytes(&self) -> Vec<u8> {
-        let mut out = Vec::with_capacity(8 + self.session_id.len() + 2 * POINT_LENGTH);
-        put_vector(&mut out, &self.session_id);
+        let mut out = Vec::with_capacity(Self::LENGTH);
+        out.extend_from_slice(&self.session_id);
         out.extend_from_slice(&point_bytes(&self.a));
         out.extend_from_slice(&point_bytes(&self.c));
+        debug_assert_eq!(out.len(), Self::LENGTH);
         out
     }
 
@@ -159,7 +163,7 @@ impl<B: Backend> CommitMessage<B> {
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, Error> {
         let mut reader = Reader::new(bytes);
         let message = Self {
-            session_id: reader.vector()?.to_vec(),
+            session_id: *reader.array()?,
             a: reader.element::<B>()?,
             c: reader.element::<B>()?,
         };
@@ -169,11 +173,15 @@ impl<B: Backend> CommitMessage<B> {
 }
 
 impl<B: Backend> ChallengeMessage<B> {
-    /// Encodes as `opaque session_id<V> || Scalar challenge`.
+    /// The encoded length: `Nn + Ns`.
+    pub const LENGTH: usize = NULLIFIER_LENGTH + SCALAR_LENGTH;
+
+    /// Encodes as `opaque session_id[Nn] || Scalar challenge`.
     pub fn to_bytes(&self) -> Vec<u8> {
-        let mut out = Vec::with_capacity(8 + self.session_id.len() + SCALAR_LENGTH);
-        put_vector(&mut out, &self.session_id);
+        let mut out = Vec::with_capacity(Self::LENGTH);
+        out.extend_from_slice(&self.session_id);
         out.extend_from_slice(&self.challenge.to_bytes());
+        debug_assert_eq!(out.len(), Self::LENGTH);
         out
     }
 
@@ -181,7 +189,7 @@ impl<B: Backend> ChallengeMessage<B> {
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, Error> {
         let mut reader = Reader::new(bytes);
         let message = Self {
-            session_id: reader.vector()?.to_vec(),
+            session_id: *reader.array()?,
             challenge: reader.scalar::<B>()?,
         };
         reader.finish()?;

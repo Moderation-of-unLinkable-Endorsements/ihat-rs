@@ -17,6 +17,7 @@ use rollatini::{
 const CTX_ISS: &[u8] = b"benchmark-issuance-context";
 const CTX_RED: &[u8] = b"benchmark-redemption-context";
 const DIGEST: &[u8] = b"benchmark-challenge-digest";
+const SESSION_ID: [u8; rollatini::NULLIFIER_LENGTH] = [0x53; rollatini::NULLIFIER_LENGTH];
 
 fn bench_backend<B: Backend>(c: &mut Criterion, backend: &str) {
     let key = SecretKey::<B>::generate().unwrap();
@@ -30,16 +31,16 @@ fn bench_backend<B: Backend>(c: &mut Criterion, backend: &str) {
         b.iter(|| SecretKey::<B>::generate().unwrap())
     });
     group.bench_function("commit", |b| {
-        b.iter(|| commit::<B>(CTX_ISS, b"session").unwrap())
+        b.iter(|| commit::<B>(CTX_ISS, &SESSION_ID).unwrap())
     });
-    let (_, commitment) = commit::<B>(CTX_ISS, b"session").unwrap();
+    let (_, commitment) = commit::<B>(CTX_ISS, &SESSION_ID).unwrap();
     group.bench_function("challenge", |b| {
         b.iter(|| challenge(&public_key, CTX_ISS, CTX_RED, &commitment).unwrap())
     });
     group.bench_function("respond", |b| {
         b.iter_batched(
             || {
-                let (state, commitment) = commit::<B>(CTX_ISS, b"session").unwrap();
+                let (state, commitment) = commit::<B>(CTX_ISS, &SESSION_ID).unwrap();
                 let (_, message) = challenge(&public_key, CTX_ISS, CTX_RED, &commitment).unwrap();
                 (state, message)
             },
@@ -50,7 +51,7 @@ fn bench_backend<B: Backend>(c: &mut Criterion, backend: &str) {
     group.bench_function("finalize", |b| {
         b.iter_batched(
             || {
-                let (state, commitment) = commit::<B>(CTX_ISS, b"session").unwrap();
+                let (state, commitment) = commit::<B>(CTX_ISS, &SESSION_ID).unwrap();
                 let (client, message) =
                     challenge(&public_key, CTX_ISS, CTX_RED, &commitment).unwrap();
                 (client, respond(&key, state, &message).unwrap())
@@ -59,7 +60,7 @@ fn bench_backend<B: Backend>(c: &mut Criterion, backend: &str) {
             BatchSize::SmallInput,
         )
     });
-    let (state, commitment) = commit::<B>(CTX_ISS, b"session").unwrap();
+    let (state, commitment) = commit::<B>(CTX_ISS, &SESSION_ID).unwrap();
     let (client, message) = challenge(&public_key, CTX_ISS, CTX_RED, &commitment).unwrap();
     let response = respond(&key, state, &message).unwrap();
     let endorsement = finalize(&public_key, client, &response).unwrap();

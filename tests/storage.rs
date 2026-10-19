@@ -1,4 +1,6 @@
-use rollatini::{AnchorState, ClientState, DefaultBackend, PROTOCOL_CONTEXT, SecretKey};
+use rollatini::{
+    AnchorState, ClientState, DefaultBackend, NULLIFIER_LENGTH, PROTOCOL_CONTEXT, SecretKey,
+};
 
 fn anchor(bytes: &[u8]) -> bool {
     AnchorState::<DefaultBackend>::from_bytes(bytes).is_ok()
@@ -11,7 +13,8 @@ fn client(bytes: &[u8]) -> bool {
 #[test]
 fn restored_continuations_complete_and_reject_malformed_blobs() {
     let key: SecretKey = SecretKey::generate().unwrap();
-    let (anchor_state, commitment) = rollatini::commit(b"epoch", b"session").unwrap();
+    let session_id = [0x53; NULLIFIER_LENGTH];
+    let (anchor_state, commitment) = rollatini::commit(b"epoch", &session_id).unwrap();
     let (client_state, challenge) =
         rollatini::challenge(&key.public_key(), b"epoch", b"scope", &commitment).unwrap();
     let a = anchor_state.to_bytes();
@@ -19,7 +22,7 @@ fn restored_continuations_complete_and_reject_malformed_blobs() {
     drop(anchor_state);
     drop(client_state);
     let anchor_state = AnchorState::from_bytes(&a).unwrap();
-    assert_eq!(anchor_state.session_id(), b"session");
+    assert_eq!(anchor_state.session_id(), session_id);
     let client_state = ClientState::from_bytes(&c).unwrap();
     assert_eq!(*a, *anchor_state.to_bytes());
     assert_eq!(*c, *client_state.to_bytes());

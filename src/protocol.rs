@@ -20,9 +20,6 @@ const CTX: &[u8] = PROTOCOL_CONTEXT;
 /// length-prefixed, so it holds at most `2^16 - 1 - Nn - 4` bytes of it.
 const MAX_REDEMPTION_CONTEXT: usize = u16::MAX as usize - NULLIFIER_LENGTH - 4;
 
-/// The largest session identifier a variable-length integer can prefix.
-const MAX_SESSION_ID: u64 = (1 << 62) - 1;
-
 // ---------------------------------------------------------------------------
 // Keys
 // ---------------------------------------------------------------------------
@@ -137,7 +134,7 @@ pub struct AnchorState<B: Backend = DefaultBackend> {
     pub(crate) a: B::Scalar,
     pub(crate) y: B::Scalar,
     pub(crate) t: B::Scalar,
-    pub(crate) session_id: Vec<u8>,
+    pub(crate) session_id: [u8; NULLIFIER_LENGTH],
 }
 
 impl<B: Backend> AnchorState<B> {
@@ -151,7 +148,7 @@ impl<B: Backend> AnchorState<B> {
 /// and the commitment `(A, C)`.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CommitMessage<B: Backend = DefaultBackend> {
-    pub(crate) session_id: Vec<u8>,
+    pub(crate) session_id: [u8; NULLIFIER_LENGTH],
     pub(crate) a: B::Point,
     pub(crate) c: B::Point,
 }
@@ -184,7 +181,7 @@ pub struct ClientState<B: Backend = DefaultBackend> {
 /// identifier of the commitment.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ChallengeMessage<B: Backend = DefaultBackend> {
-    pub(crate) session_id: Vec<u8>,
+    pub(crate) session_id: [u8; NULLIFIER_LENGTH],
     pub(crate) challenge: B::Scalar,
 }
 
@@ -373,7 +370,8 @@ fn compute_challenge<B: Backend>(
 ///
 /// The Anchor keeps the state until it answers the session's challenge or
 /// discards the session, and sends the message. It must not have two open
-/// sessions with one identifier, and should draw identifiers at random.
+/// sessions with one identifier, and should draw identifiers at random. The
+/// identifier must contain exactly [`NULLIFIER_LENGTH`] bytes.
 pub fn commit<B: Backend>(
     ctx_iss: &[u8],
     session_id: &[u8],
@@ -386,9 +384,8 @@ pub(crate) fn commit_with<B: Backend, R: Random>(
     session_id: &[u8],
     rng: &mut R,
 ) -> Result<(AnchorState<B>, CommitMessage<B>), Error> {
-    if session_id.len() as u64 > MAX_SESSION_ID {
-        return Err(Error::InvalidInput);
-    }
+    let session_id: [u8; NULLIFIER_LENGTH] =
+        session_id.try_into().map_err(|_| Error::InvalidInput)?;
     let z = context_base::<B>(ctx_iss)?;
     let mut rand = [0u8; NSEED];
     rng.fill(&mut rand);
@@ -399,16 +396,12 @@ pub(crate) fn commit_with<B: Backend, R: Random>(
         a: derived[0],
         t: derived[1],
         y: derived[2],
-        session_id: session_id.to_vec(),
+        session_id,
     };
     let a = B::Point::mul_generator(&state.a);
     let c = B::Point::mul_generator(&state.t).add(&z.mul(&state.y));
     encode(&c)?;
-    let message = CommitMessage {
-        session_id: session_id.to_vec(),
-        a,
-        c,
-    };
+    let message = CommitMessage { session_id, a, c };
     Ok((state, message))
 }
 
@@ -477,7 +470,7 @@ pub(crate) fn challenge_with<B: Backend, R: Random>(
     }
     state.challenge = state.c * state.gamma2;
     let message = ChallengeMessage {
-        session_id: commitment.session_id.clone(),
+        session_id: commitment.session_id,
         challenge: state.challenge,
     };
     Ok((state, message))

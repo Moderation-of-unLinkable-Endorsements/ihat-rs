@@ -60,8 +60,12 @@ impl<B: Backend> AnchorState<B> {
     /// know whether the state was already consumed.
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, Error> {
         let mut reader = reader(bytes, b"AnchorState")?;
+        let session_id: [u8; crate::NULLIFIER_LENGTH] = reader
+            .vector()?
+            .try_into()
+            .map_err(|_| Error::Deserialize)?;
         let mut state = Self {
-            session_id: reader.vector()?.to_vec(),
+            session_id,
             a: B::Scalar::default(),
             y: B::Scalar::default(),
             t: B::Scalar::default(),
