@@ -1,12 +1,12 @@
 //! Issues Endorsements from several Anchors and redeems each at a Moderator
 //! whose Anchor Set lists them all, printing the message sizes.
 
-use rollatini::{
+use ec_ihat::{
     ChallengeMessage, CommitMessage, Endorsement, PublicKey, Redemption, ResponseMessage,
     SecretKey, challenge, commit, finalize, redeem, respond, verify, verify_redemption,
 };
 
-fn main() -> Result<(), rollatini::Error> {
+fn main() -> Result<(), ec_ihat::Error> {
     let ctx_iss = b"epoch-1";
     let ctx_red = b"moderator.example";
 

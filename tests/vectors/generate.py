@@ -1,4 +1,4 @@
-"""Generate the extended Rollatini test vectors from the draft's reference
+"""Generate the extended EC-IHAT test vectors from the draft's reference
 implementation, in the draft's `key = value` format.
 
 Run from the `poc/` directory of the internet-drafts repository, with its
@@ -15,9 +15,9 @@ Randomness is served from SHAKE128 of a fixed label so that every entry is
 reproducible; each `rand` entry records the bytes the algorithm consumed.
 """
 
-from rollatini import protocol as rollatini, vectors
+from ec_ihat import protocol as ec_ihat, vectors
 
-LABEL = b"Rollatiniv1-P256-SHA256 extended vectors"
+LABEL = b"EC-IHATv1-P256-SHA256 extended vectors"
 # Anchor Set sizes and the position of the issuing Anchor in each: the
 # first and last positions, odd sizes that carry a node up at several
 # levels, powers of two, and a single key.
@@ -42,9 +42,9 @@ def main() -> None:
         for line in lines
         if line.strip() and not line.startswith(("## ", "~~~"))
     )
-    G = rollatini.G
+    G = ec_ihat.G
     for i in range(PERMUTATION_POINTS):
-        _, point = G.DeriveKeyPair(bytes([i]) * rollatini.Nseed, b"permutation vectors")
+        _, point = G.DeriveKeyPair(bytes([i]) * ec_ihat.Nseed, b"permutation vectors")
         out += vectors.entry(f"perm{i}.point", G.SerializeElement(point))
         out += vectors.entry(f"perm{i}.P", G.SerializeElement(G.P(point)))
         out += vectors.entry(f"perm{i}.Pinv", G.SerializeElement(G.Pinv(point)))
