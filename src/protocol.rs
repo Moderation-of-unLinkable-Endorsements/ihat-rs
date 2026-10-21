@@ -20,9 +20,6 @@ const CTX: &[u8] = PROTOCOL_CONTEXT;
 /// length-prefixed, so it holds at most `2^16 - 1 - Nn - 4` bytes of it.
 const MAX_REDEMPTION_CONTEXT: usize = u16::MAX as usize - NULLIFIER_LENGTH - 4;
 
-/// The largest session identifier a variable-length integer can prefix.
-const MAX_SESSION_ID: u64 = (1 << 62) - 1;
-
 // ---------------------------------------------------------------------------
 // Keys
 // ---------------------------------------------------------------------------
@@ -131,36 +128,19 @@ impl<B: Backend> PublicKey<B> {
 // Records
 // ---------------------------------------------------------------------------
 
-/// The Anchor's state between [`commit`] and [`respond`]: `(a, y, t)` and
-/// the session identifier. It answers at most one challenge.
+/// The Anchor's state between [`commit`] and [`respond`]: `(a, y, t)`. It
+/// answers at most one challenge.
 pub struct AnchorState<B: Backend = DefaultBackend> {
     pub(crate) a: B::Scalar,
     pub(crate) y: B::Scalar,
     pub(crate) t: B::Scalar,
-    pub(crate) session_id: Vec<u8>,
 }
 
-impl<B: Backend> AnchorState<B> {
-    /// The session identifier the state was committed under.
-    pub fn session_id(&self) -> &[u8] {
-        &self.session_id
-    }
-}
-
-/// The Anchor's opening message, `CommitMessage`: the session identifier
-/// and the commitment `(A, C)`.
+/// The Anchor's opening message, `CommitMessage`: the commitment `(A, C)`.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CommitMessage<B: Backend = DefaultBackend> {
-    pub(crate) session_id: Vec<u8>,
     pub(crate) a: B::Point,
     pub(crate) c: B::Point,
-}
-
-impl<B: Backend> CommitMessage<B> {
-    /// The session identifier, which the Client echoes.
-    pub fn session_id(&self) -> &[u8] {
-        &self.session_id
-    }
 }
 
 /// The Client's state between [`challenge`] and [`finalize`]: the
@@ -180,19 +160,10 @@ pub struct ClientState<B: Backend = DefaultBackend> {
     pub(crate) c: B::Scalar,
 }
 
-/// The Client's blinded challenge, `ChallengeMessage`, echoing the session
-/// identifier of the commitment.
+/// The Client's blinded challenge, `ChallengeMessage`.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ChallengeMessage<B: Backend = DefaultBackend> {
-    pub(crate) session_id: Vec<u8>,
     pub(crate) challenge: B::Scalar,
-}
-
-impl<B: Backend> ChallengeMessage<B> {
-    /// The session identifier, by which the Anchor finds its state.
-    pub fn session_id(&self) -> &[u8] {
-        &self.session_id
-    }
 }
 
 /// The Anchor's response, `ResponseMessage`: `(s, y, t)`.
@@ -287,7 +258,7 @@ macro_rules! secret_record {
     };
 }
 
-secret_record!(AnchorState { a, y, t; ; session_id });
+secret_record!(AnchorState { a, y, t; ; });
 secret_record!(ClientState {
     r1, r2, gamma1, gamma2, challenge, c;
     commitment_a, commitment_c;
@@ -369,26 +340,20 @@ fn compute_challenge<B: Backend>(
 // Issuance
 // ---------------------------------------------------------------------------
 
-/// `Commit(ctx_iss)`, run by the Anchor to open the session `session_id`.
+/// `Commit(ctx_iss)`, run by the Anchor to open a session.
 ///
 /// The Anchor keeps the state until it answers the session's challenge or
-/// discards the session, and sends the message. It must not have two open
-/// sessions with one identifier, and should draw identifiers at random.
-pub fn commit<B: Backend>(
-    ctx_iss: &[u8],
-    session_id: &[u8],
-) -> Result<(AnchorState<B>, CommitMessage<B>), Error> {
-    commit_with(ctx_iss, session_id, &mut SystemRandom::<B>::new())
+/// discards the session, and sends the message. Correlating the challenge
+/// with this state is the Anchor's job; any identifier it uses must stay
+/// out of the protocol (Section 8 of the draft).
+pub fn commit<B: Backend>(ctx_iss: &[u8]) -> Result<(AnchorState<B>, CommitMessage<B>), Error> {
+    commit_with(ctx_iss, &mut SystemRandom::<B>::new())
 }
 
 pub(crate) fn commit_with<B: Backend, R: Random>(
     ctx_iss: &[u8],
-    session_id: &[u8],
     rng: &mut R,
 ) -> Result<(AnchorState<B>, CommitMessage<B>), Error> {
-    if session_id.len() as u64 > MAX_SESSION_ID {
-        return Err(Error::InvalidInput);
-    }
     let z = context_base::<B>(ctx_iss)?;
     let mut rand = [0u8; NSEED];
     rng.fill(&mut rand);
@@ -399,22 +364,16 @@ pub(crate) fn commit_with<B: Backend, R: Random>(
         a: derived[0],
         t: derived[1],
         y: derived[2],
-        session_id: session_id.to_vec(),
     };
     let a = B::Point::mul_generator(&state.a);
     let c = B::Point::mul_generator(&state.t).add(&z.mul(&state.y));
     encode(&c)?;
-    let message = CommitMessage {
-        session_id: session_id.to_vec(),
-        a,
-        c,
-    };
+    let message = CommitMessage { a, c };
     Ok((state, message))
 }
 
 /// `Challenge(pkA, ctx_iss, ctx_red, commitment)`, run by the Client: draws
-/// the nullifier, blinds the commitment, and returns the blinded challenge
-/// under the commitment's session identifier.
+/// the nullifier, blinds the commitment, and returns the blinded challenge.
 pub fn challenge<B: Backend>(
     public_key: &PublicKey<B>,
     ctx_iss: &[u8],
@@ -477,7 +436,6 @@ pub(crate) fn challenge_with<B: Backend, R: Random>(
     }
     state.challenge = state.c * state.gamma2;
     let message = ChallengeMessage {
-        session_id: commitment.session_id.clone(),
         challenge: state.challenge,
     };
     Ok((state, message))
@@ -486,16 +444,14 @@ pub(crate) fn challenge_with<B: Backend, R: Random>(
 /// `Respond(skA, state, challenge)`, run by the Anchor. Consumes the state,
 /// so a session answers at most one challenge.
 ///
-/// Returns [`Error::Session`] if the challenge carries another session's
-/// identifier.
+/// The Anchor must never run this on a state it has already used or
+/// discarded, including a persisted copy: two responses from one state
+/// disclose the signing key.
 pub fn respond<B: Backend>(
     secret_key: &SecretKey<B>,
     state: AnchorState<B>,
     challenge: &ChallengeMessage<B>,
 ) -> Result<ResponseMessage<B>, Error> {
-    if !bool::from(state.session_id.ct_eq(&challenge.session_id)) {
-        return Err(Error::Session);
-    }
     if bool::from(challenge.challenge.is_zero()) {
         return Err(Error::Verify);
     }
