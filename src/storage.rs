@@ -39,16 +39,16 @@ fn nonzero<S: Scalar>(scalars: &[&S]) -> Result<(), Error> {
 
 impl<B: Backend> AnchorState<B> {
     /// Encodes the secret state for the Anchor's own storage, never the
-    /// network: the session identifier, then `a`, `y`, `t`.
+    /// network: `a`, `y`, `t`.
     ///
     /// Whoever can replay or modify a stored state recovers the signing key
     /// (Section 5.3 of the draft). Authenticate it, for example with an AEAD
-    /// bound to the session identifier, and consume it at most once.
+    /// bound to the transport's session identifier, and consume it at most
+    /// once.
     pub fn to_bytes(&self) -> Zeroizing<Vec<u8>> {
         let mut out = Zeroizing::new(header(b"AnchorState"));
-        // Reserve before secrets are written; vector length prefixes use at most 8 bytes.
-        out.reserve(8 + self.session_id.len() + 3 * SCALAR_LENGTH);
-        put_vector(&mut out, &self.session_id);
+        // Reserve before secrets are written.
+        out.reserve(3 * SCALAR_LENGTH);
         for scalar in [&self.a, &self.y, &self.t] {
             out.extend_from_slice(Zeroizing::new(scalar.to_bytes()).as_ref());
         }
@@ -61,7 +61,6 @@ impl<B: Backend> AnchorState<B> {
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, Error> {
         let mut reader = reader(bytes, b"AnchorState")?;
         let mut state = Self {
-            session_id: reader.vector()?.to_vec(),
             a: B::Scalar::default(),
             y: B::Scalar::default(),
             t: B::Scalar::default(),
