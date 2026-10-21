@@ -1,6 +1,6 @@
 # Test vectors
 
-`draft.txt` is the Test Vectors section of draft-authors-mole-rollatini, with
+`draft.txt` is the Test Vectors section of draft-authors-mole-ec-ihat, with
 the fences and headings removed. `extended.txt` was generated from the draft's
 Python reference implementation by `generate.py`, which documents the
 invocation: it holds the same entries from a different random stream, with

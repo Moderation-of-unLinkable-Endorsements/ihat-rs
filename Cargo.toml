@@ -1,19 +1,19 @@
 [package]
-name = "rollatini-rs"
+name = "ihat-rs"
 version = "0.1.0"
 edition = "2024"
 rust-version = "1.85"
 license = "MIT OR Apache-2.0"
 readme = "README.md"
-description = "Rollatini: an issuer-hiding anonymous token over NIST P-256, per draft-authors-mole-rollatini"
-repository = "https://github.com/Moderation-of-unLinkable-Endorsements/anchor-token-rs"
+description = "EC-IHAT: an issuer-hiding anonymous token over NIST P-256, per draft-authors-mole-ec-ihat"
+repository = "https://github.com/Moderation-of-unLinkable-Endorsements/ihat-rs"
 keywords = ["anonymous-tokens", "privacy", "blind-signatures", "zero-knowledge", "p256"]
 categories = ["cryptography", "no-std"]
 # Examples are listed below; others in `examples/` are not built.
 autoexamples = false
 
 [lib]
-name = "rollatini"
+name = "ec_ihat"
 
 [features]
 default = ["rustcrypto", "std"]
@@ -52,5 +52,5 @@ version = "0.8"
 name = "demo"
 
 [[bench]]
-name = "rollatini"
+name = "ec_ihat"
 harness = false

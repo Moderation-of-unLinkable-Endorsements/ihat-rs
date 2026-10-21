@@ -1,4 +1,4 @@
-use rollatini::{AnchorState, ClientState, DefaultBackend, PROTOCOL_CONTEXT, SecretKey};
+use ec_ihat::{AnchorState, ClientState, DefaultBackend, PROTOCOL_CONTEXT, SecretKey};
 
 fn anchor(bytes: &[u8]) -> bool {
     AnchorState::<DefaultBackend>::from_bytes(bytes).is_ok()
@@ -11,9 +11,9 @@ fn client(bytes: &[u8]) -> bool {
 #[test]
 fn restored_continuations_complete_and_reject_malformed_blobs() {
     let key: SecretKey = SecretKey::generate().unwrap();
-    let (anchor_state, commitment) = rollatini::commit(b"epoch", b"session").unwrap();
+    let (anchor_state, commitment) = ec_ihat::commit(b"epoch", b"session").unwrap();
     let (client_state, challenge) =
-        rollatini::challenge(&key.public_key(), b"epoch", b"scope", &commitment).unwrap();
+        ec_ihat::challenge(&key.public_key(), b"epoch", b"scope", &commitment).unwrap();
     let a = anchor_state.to_bytes();
     let c = client_state.to_bytes();
     drop(anchor_state);
@@ -23,9 +23,9 @@ fn restored_continuations_complete_and_reject_malformed_blobs() {
     let client_state = ClientState::from_bytes(&c).unwrap();
     assert_eq!(*a, *anchor_state.to_bytes());
     assert_eq!(*c, *client_state.to_bytes());
-    let response = rollatini::respond(&key, anchor_state, &challenge).unwrap();
-    let endorsement = rollatini::finalize(&key.public_key(), client_state, &response).unwrap();
-    rollatini::verify(&key.public_key(), &endorsement, b"epoch", b"scope").unwrap();
+    let response = ec_ihat::respond(&key, anchor_state, &challenge).unwrap();
+    let endorsement = ec_ihat::finalize(&key.public_key(), client_state, &response).unwrap();
+    ec_ihat::verify(&key.public_key(), &endorsement, b"epoch", b"scope").unwrap();
 
     let anchor_header = [b"AnchorState-", PROTOCOL_CONTEXT].concat();
     let client_header = [b"ClientState-", PROTOCOL_CONTEXT].concat();

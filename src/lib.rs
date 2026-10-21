@@ -1,4 +1,4 @@
-//! Rollatini: an issuer-hiding anonymous token.
+//! EC-IHAT: an issuer-hiding anonymous token.
 //!
 //! An Anchor issues an Endorsement to a Client in a three-move partially
 //! blind signature: the Anchor learns neither the Endorsement nor the
@@ -11,13 +11,13 @@
 //! it.
 //!
 //! This crate implements
-//! [draft-authors-mole-rollatini](https://moderation-of-unlinkable-endorsements.github.io/internet-drafts/draft-authors-mole-rollatini.html)
+//! [draft-authors-mole-ec-ihat](https://moderation-of-unlinkable-endorsements.github.io/internet-drafts/draft-authors-mole-ec-ihat.html)
 //! for the `P256-SHA256` ciphersuite.
 //!
 //! # Flow
 //!
 //! ```
-//! use rollatini::{PublicKey, SecretKey};
+//! use ec_ihat::{PublicKey, SecretKey};
 //!
 //! // The Anchor holds a key pair and publishes the public key.
 //! let secret_key: SecretKey = SecretKey::generate()?;
@@ -27,11 +27,11 @@
 //!
 //! // Issuance: the Anchor commits, the Client challenges, the Anchor
 //! // responds, and the Client finalizes an Endorsement.
-//! let (anchor_state, commitment) = rollatini::commit(ctx_iss, b"session-1")?;
+//! let (anchor_state, commitment) = ec_ihat::commit(ctx_iss, b"session-1")?;
 //! let (client_state, challenge) =
-//!     rollatini::challenge(&public_key, ctx_iss, ctx_red, &commitment)?;
-//! let response = rollatini::respond(&secret_key, anchor_state, &challenge)?;
-//! let endorsement = rollatini::finalize(&public_key, client_state, &response)?;
+//!     ec_ihat::challenge(&public_key, ctx_iss, ctx_red, &commitment)?;
+//! let response = ec_ihat::respond(&secret_key, anchor_state, &challenge)?;
+//! let endorsement = ec_ihat::finalize(&public_key, client_state, &response)?;
 //!
 //! // Redemption: the Moderator accepts Endorsements from any Anchor in its
 //! // Anchor Set; the Client proves its Anchor is one of them.
@@ -39,11 +39,11 @@
 //! let anchor_set = [other, public_key];
 //! let challenge_digest = b"moderator challenge";
 //! let redemption =
-//!     rollatini::redeem(&anchor_set, 1, endorsement, ctx_iss, ctx_red, challenge_digest)?;
-//! let nf = rollatini::verify_redemption(&anchor_set, &redemption, ctx_iss, ctx_red, challenge_digest)?;
+//!     ec_ihat::redeem(&anchor_set, 1, endorsement, ctx_iss, ctx_red, challenge_digest)?;
+//! let nf = ec_ihat::verify_redemption(&anchor_set, &redemption, ctx_iss, ctx_red, challenge_digest)?;
 //! // ... the Moderator rejects a repeated `nf` and records it here ...
 //! # let _ = nf;
-//! # Ok::<(), rollatini::Error>(())
+//! # Ok::<(), ec_ihat::Error>(())
 //! ```
 //!
 //! Every message and the Endorsement have the wire encoding of the draft,
@@ -137,8 +137,8 @@ pub type DefaultBackend = backend::rustcrypto::RustCrypto;
 /// The ciphersuite identifier, `P256-SHA256`.
 pub const CIPHERSUITE_IDENTIFIER: &[u8] = b"P256-SHA256";
 
-/// The protocol context `ctx_proto = "Rollatiniv1-" || identifier`.
-pub const PROTOCOL_CONTEXT: &[u8] = b"Rollatiniv1-P256-SHA256";
+/// The protocol context `ctx_proto = "EC-IHATv1-" || identifier`.
+pub const PROTOCOL_CONTEXT: &[u8] = b"EC-IHATv1-P256-SHA256";
 
 /// The seed length `Nseed` consumed by every scalar derivation.
 pub const SEED_LENGTH: usize = 48;

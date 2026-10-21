@@ -8,8 +8,8 @@
 use std::time::Duration;
 
 use criterion::{BatchSize, BenchmarkId, Criterion, criterion_group, criterion_main};
-use rollatini::backend::Backend;
-use rollatini::{
+use ec_ihat::backend::Backend;
+use ec_ihat::{
     Endorsement, PublicKey, Redemption, SecretKey, challenge, commit, finalize, redeem, respond,
     verify, verify_redemption,
 };
@@ -105,10 +105,10 @@ fn bench_backend<B: Backend>(c: &mut Criterion, backend: &str) {
 
 fn benches(c: &mut Criterion) {
     #[cfg(feature = "rustcrypto")]
-    bench_backend::<rollatini::backend::rustcrypto::RustCrypto>(c, "rustcrypto");
+    bench_backend::<ec_ihat::backend::rustcrypto::RustCrypto>(c, "rustcrypto");
     #[cfg(feature = "boringssl")]
-    bench_backend::<rollatini::backend::boringssl::BoringSsl>(c, "boringssl");
+    bench_backend::<ec_ihat::backend::boringssl::BoringSsl>(c, "boringssl");
 }
 
-criterion_group!(rollatini, benches);
-criterion_main!(rollatini);
+criterion_group!(ec_ihat, benches);
+criterion_main!(ec_ihat);

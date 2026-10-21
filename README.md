@@ -1,7 +1,7 @@
-# rollatini-rs
+# ihat-rs
 
-A Rust implementation of **Rollatini**, the issuer-hiding anonymous token of
-[draft-authors-mole-rollatini](https://moderation-of-unlinkable-endorsements.github.io/internet-drafts/draft-authors-mole-rollatini.html),
+A Rust implementation of **EC-IHAT**, the issuer-hiding anonymous token of
+[draft-authors-mole-ec-ihat](https://moderation-of-unlinkable-endorsements.github.io/internet-drafts/draft-authors-mole-ec-ihat.html),
 for the `P256-SHA256` ciphersuite.
 
 An Anchor issues an Endorsement to a Client in a three-move partially blind
@@ -21,7 +21,7 @@ byte.
 ## Usage
 
 ```rust
-use rollatini::{PublicKey, SecretKey};
+use ec_ihat::{PublicKey, SecretKey};
 
 let secret_key: SecretKey = SecretKey::generate()?;  // Anchor
 let public_key = secret_key.public_key();            // published
@@ -29,22 +29,22 @@ let ctx_iss = b"epoch-42";                           // agreed out of band
 let ctx_red = b"moderator.example";                  // chosen by the Client
 
 // Issuance: Commit, Challenge, Respond, Finalize.
-let (anchor_state, commitment) = rollatini::commit(ctx_iss, b"session-1")?;
+let (anchor_state, commitment) = ec_ihat::commit(ctx_iss, b"session-1")?;
 let (client_state, challenge) =
-    rollatini::challenge(&public_key, ctx_iss, ctx_red, &commitment)?;
-let response = rollatini::respond(&secret_key, anchor_state, &challenge)?;
-let endorsement = rollatini::finalize(&public_key, client_state, &response)?;
+    ec_ihat::challenge(&public_key, ctx_iss, ctx_red, &commitment)?;
+let response = ec_ihat::respond(&secret_key, anchor_state, &challenge)?;
+let endorsement = ec_ihat::finalize(&public_key, client_state, &response)?;
 
 // Redemption against the Moderator's Anchor Set, in which this Anchor's key
 // is at index 1.
 let other: PublicKey = SecretKey::generate()?.public_key();
 let anchor_set = [other, public_key];
 let digest = b"moderator challenge digest";
-let redemption = rollatini::redeem(&anchor_set, 1, endorsement, ctx_iss, ctx_red, digest)?;
-let nf = rollatini::verify_redemption(&anchor_set, &redemption, ctx_iss, ctx_red, digest)?;
+let redemption = ec_ihat::redeem(&anchor_set, 1, endorsement, ctx_iss, ctx_red, digest)?;
+let nf = ec_ihat::verify_redemption(&anchor_set, &redemption, ctx_iss, ctx_red, digest)?;
 // reject a repeated nf, and record it before granting anything
 # let _ = nf;
-# Ok::<(), rollatini::Error>(())
+# Ok::<(), ec_ihat::Error>(())
 ```
 
 `CommitMessage`, `ChallengeMessage`, `ResponseMessage`, `Endorsement`, and
