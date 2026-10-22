@@ -557,6 +557,25 @@ fn only_compressed_prefixes_decode<B: Backend>() {
     }
 }
 
+#[test]
+fn errors_display_distinct_messages() {
+    let errors = [
+        Error::Deserialize,
+        Error::Verify,
+        Error::Derive,
+        Error::InvalidInput,
+    ];
+    let messages: Vec<_> = errors
+        .iter()
+        .map(|error| alloc::format!("{error}"))
+        .collect();
+    for (i, message) in messages.iter().enumerate() {
+        assert!(!message.is_empty(), "{:?}", errors[i]);
+        assert!(!messages[..i].contains(message), "{:?}", errors[i]);
+    }
+    assert_eq!(messages[1], "verification failed");
+}
+
 backend_tests!(
     issue_and_redeem_everywhere,
     redemption_rejections,
