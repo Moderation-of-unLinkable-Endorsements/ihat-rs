@@ -23,7 +23,7 @@ use p256::elliptic_curve::{Field, Group, PrimeField};
 use p256::hash2curve::{ExpandMsgXmd, hash_from_bytes};
 use p256::{AffinePoint, CompressedPoint, FieldBytes, NistP256, ProjectivePoint};
 use sha2::Digest;
-use subtle::{Choice, ConstantTimeEq, CtOption};
+use subtle::{Choice, ConditionallySelectable, ConstantTimeEq, CtOption};
 
 use super::{POINT_LENGTH, SCALAR_LENGTH};
 
@@ -91,6 +91,22 @@ impl super::Point for ProjectivePoint {
     fn lincomb<const N: usize>(terms: [(&Self, &Self::Scalar); N]) -> Self {
         let terms = terms.map(|(point, scalar)| (*point, *scalar));
         <Self as LinearCombination<[(Self, Self::Scalar); N]>>::lincomb(&terms)
+    }
+
+    fn ct_select<'a, I>(table: I, index: usize) -> CtOption<Self>
+    where
+        I: IntoIterator<Item = &'a Self>,
+    {
+        let mut selected = Self::IDENTITY;
+        let mut found = Choice::from(0);
+        let mut no_identity = Choice::from(1);
+        for (i, point) in table.into_iter().enumerate() {
+            let at = i.ct_eq(&index);
+            selected.conditional_assign(point, at);
+            found |= at;
+            no_identity &= !Group::is_identity(point);
+        }
+        CtOption::new(selected, found & no_identity)
     }
 
     fn from_bytes(bytes: &[u8; POINT_LENGTH]) -> CtOption<Self> {
