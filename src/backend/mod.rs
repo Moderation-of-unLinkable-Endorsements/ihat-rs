@@ -156,6 +156,18 @@ pub trait Point: Clone + Debug + PartialEq + Eq + Sized {
         })
     }
 
+    /// The point at `index` in `table`, or `None` if `index` is out of
+    /// range or any entry is the identity.
+    ///
+    /// Constant time in `index`: every entry is read, and the result is
+    /// chosen by constant-time selection. Which entries are the identity may
+    /// affect timing, and a backend may take a separate path when the
+    /// selection fails, as the BoringSSL backend does.
+    fn ct_select<'a, I>(table: I, index: usize) -> CtOption<Self>
+    where
+        I: IntoIterator<Item = &'a Self>,
+        Self: 'a;
+
     /// Decodes a compressed SEC1 point, rejecting the identity and any
     /// non-canonical or off-curve encoding.
     fn from_bytes(bytes: &[u8; POINT_LENGTH]) -> CtOption<Self>;
