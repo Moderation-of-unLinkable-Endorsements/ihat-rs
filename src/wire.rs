@@ -24,7 +24,7 @@ use alloc::vec::Vec;
 use zeroize::Zeroizing;
 
 use crate::Error;
-use crate::backend::{Backend, POINT_LENGTH, Point, SCALAR_LENGTH, Scalar};
+use crate::backend::{Backend, BackendFixedBaseExt, POINT_LENGTH, Point, SCALAR_LENGTH, Scalar};
 use crate::hash::require;
 use crate::protocol::{
     ClientIssuanceState, ClientSpendState, Credential, IssueRequestMessage, IssueResponseMessage,
@@ -68,7 +68,7 @@ impl<'a> Reader<'a> {
         require(B::Scalar::from_bytes(self.array()?), Error::Deserialize)
     }
 
-    fn amount<B: Backend>(&mut self, params: &Params<B>) -> Result<u64, Error> {
+    fn amount<B: BackendFixedBaseExt>(&mut self, params: &Params<B>) -> Result<u64, Error> {
         let value = u64::from_be_bytes(*self.array()?);
         params.check_amount(value)?;
         Ok(value)
@@ -98,7 +98,7 @@ fn array<const N: usize>(bytes: &[u8]) -> Result<[u8; N], Error> {
     bytes.try_into().map_err(|_| Error::Deserialize)
 }
 
-impl<B: Backend> IssueRequestMessage<B> {
+impl<B: BackendFixedBaseExt> IssueRequestMessage<B> {
     /// The encoded length: `Ne + 3 * Ns`.
     pub const LENGTH: usize = POINT_LENGTH + 3 * SCALAR_LENGTH;
 
@@ -123,7 +123,7 @@ impl<B: Backend> IssueRequestMessage<B> {
     }
 }
 
-impl<B: Backend> IssueResponseMessage<B> {
+impl<B: BackendFixedBaseExt> IssueResponseMessage<B> {
     /// The encoded length: `Ne + Ns + 8 + 2 * Ns`.
     pub const LENGTH: usize = POINT_LENGTH + 3 * SCALAR_LENGTH + AMOUNT_LENGTH;
 
@@ -152,7 +152,7 @@ impl<B: Backend> IssueResponseMessage<B> {
     }
 }
 
-impl<B: Backend> RefundMessage<B> {
+impl<B: BackendFixedBaseExt> RefundMessage<B> {
     /// The encoded length: `Ne + Ns + 8 + 2 * Ns`.
     pub const LENGTH: usize = POINT_LENGTH + 3 * SCALAR_LENGTH + AMOUNT_LENGTH;
 
@@ -181,7 +181,7 @@ impl<B: Backend> RefundMessage<B> {
     }
 }
 
-impl<B: Backend> SpendMessage<B> {
+impl<B: BackendFixedBaseExt> SpendMessage<B> {
     /// The encoded length of a spend of `s` with allowance `a` at the
     /// balance width of `params`.
     pub fn encoded_len(params: &Params<B>, s: u64, a: u64) -> Result<usize, Error> {
@@ -253,7 +253,7 @@ impl<B: Backend> SpendMessage<B> {
     }
 }
 
-impl<B: Backend> Credential<B> {
+impl<B: BackendFixedBaseExt> Credential<B> {
     /// The encoded length: `3 * Ns + 8 + Ne`.
     pub const LENGTH: usize = 3 * SCALAR_LENGTH + AMOUNT_LENGTH + POINT_LENGTH;
 
@@ -285,7 +285,7 @@ impl<B: Backend> Credential<B> {
     }
 }
 
-impl<B: Backend> ClientIssuanceState<B> {
+impl<B: BackendFixedBaseExt> ClientIssuanceState<B> {
     /// The encoded length: `2 * Ns + Ne`.
     pub const LENGTH: usize = 2 * SCALAR_LENGTH + POINT_LENGTH;
 
@@ -313,7 +313,7 @@ impl<B: Backend> ClientIssuanceState<B> {
     }
 }
 
-impl<B: Backend> ClientSpendState<B> {
+impl<B: BackendFixedBaseExt> ClientSpendState<B> {
     /// The encoded length: `2 * Ns + 3 * 8 + Ne`.
     pub const LENGTH: usize = 2 * SCALAR_LENGTH + 3 * AMOUNT_LENGTH + POINT_LENGTH;
 

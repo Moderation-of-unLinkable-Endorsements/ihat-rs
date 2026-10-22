@@ -24,12 +24,12 @@
 
 use alloc::vec::Vec;
 
+use ec_ihat::hash::BackendHashExt;
+use shake::{ExtendableOutput, Shake128, Update, XofReader};
 use subtle::ConstantTimeEq;
 use zeroize::{Zeroize, Zeroizing};
 
-use crate::backend::{
-    Backend, ORDER, POINT_LENGTH, Point, SCALAR_LENGTH, Scalar, Shake128, Shake128Reader,
-};
+use crate::backend::{Backend, ORDER, POINT_LENGTH, Point, SCALAR_LENGTH, Scalar};
 use crate::hash::{self, NSEED};
 use crate::random::Random;
 use crate::{Error, PROTOCOL_CONTEXT};
@@ -103,13 +103,13 @@ pub(crate) fn tag(label: &[u8], bindings: &[&[u8]]) -> Result<Vec<u8>, Error> {
 }
 
 /// `DeriveSessionID(tag)`.
-pub(crate) fn session_id<B: Backend>(tag: &[u8]) -> [u8; 32] {
-    let mut sponge = B::Shake128::new();
-    sponge.absorb(SESSION_ID_LABEL);
-    sponge.absorb(&INIT_PADDING);
-    sponge.absorb(tag);
+pub(crate) fn session_id(tag: &[u8]) -> [u8; 32] {
+    let mut sponge = Shake128::default();
+    sponge.update(SESSION_ID_LABEL);
+    sponge.update(&INIT_PADDING);
+    sponge.update(tag);
     let mut out = [0u8; 32];
-    sponge.finalize().read(&mut out);
+    sponge.finalize_xof().read(&mut out);
     out
 }
 
@@ -117,13 +117,13 @@ pub(crate) fn session_id<B: Backend>(tag: &[u8]) -> [u8; 32] {
 /// the serialized relation and commitments, and the challenge is the
 /// little-endian reduction of `Ns + 16` squeezed bytes.
 fn challenge<B: Backend>(session_id: &[u8; 32], relation: &[u8], commitments: &[u8]) -> B::Scalar {
-    let mut sponge = B::Shake128::new();
-    sponge.absorb(session_id);
-    sponge.absorb(&INIT_PADDING);
-    sponge.absorb(relation);
-    sponge.absorb(commitments);
+    let mut sponge = Shake128::default();
+    sponge.update(session_id);
+    sponge.update(&INIT_PADDING);
+    sponge.update(relation);
+    sponge.update(commitments);
     let mut out = [0u8; 48];
-    sponge.finalize().read(&mut out);
+    sponge.finalize_xof().read(&mut out);
     hash::reduce_le_48::<B>(&out)
 }
 
@@ -254,13 +254,15 @@ fn prover_nonces<B: Backend, R: Random>(
     let mut rand = Zeroizing::new([0u8; NSEED]);
     rng.fill(rand.as_mut())?;
     // The instance is `session_id || I2OSP(len(relation), 4) || relation`.
-    hash::derive_nonces::<B>(
+    B::derive_nonces(
+        PROTOCOL_CONTEXT,
         &secret,
         b"nonce",
         &[session_id, &relation_len.to_be_bytes(), relation],
         rand.as_ref(),
         witness.len(),
     )
+    .map_err(Into::into)
 }
 
 /// The commitments of a proof, wiped when dropped: with the challenge and

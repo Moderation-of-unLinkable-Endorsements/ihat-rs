@@ -17,8 +17,10 @@
 
 use alloc::vec::Vec;
 
-use super::{Replay, os_rng};
-use crate::backend::{Backend, FixedBase, POINT_LENGTH, Point, SCALAR_LENGTH, Scalar};
+use super::{Replay, os_rng, random_key};
+use crate::backend::{
+    Backend, BackendFixedBaseExt, FixedBase, POINT_LENGTH, Point, SCALAR_LENGTH, Scalar,
+};
 use crate::protocol::{
     ClientIssuanceState, ClientSpendState, Credential, IssueRequestMessage, IssueResponseMessage,
     Params, PublicKey, RefundMessage, SecretKey, SpendMessage, finalize_issue, finalize_refund,
@@ -31,7 +33,7 @@ const CTX: &[u8] = b"epoch";
 const CHALLENGE: &[u8] = b"challenge";
 
 /// The four ciphersuite generators, for the vectors.
-pub(crate) fn generators<B: Backend>(params: &Params<B>) -> [B::Point; 4] {
+pub(crate) fn generators<B: BackendFixedBaseExt>(params: &Params<B>) -> [B::Point; 4] {
     let g = params.generators();
     [&g.h1, &g.h2, &g.h3, &g.h4].map(|base| base.point().clone())
 }
@@ -41,15 +43,15 @@ pub(crate) fn context_scalar<B: Backend>(ctx_cred: &[u8]) -> [u8; 32] {
     crate::protocol::context_scalar_for_tests::<B>(ctx_cred).to_bytes()
 }
 
-struct Setup<B: Backend> {
+struct Setup<B: BackendFixedBaseExt> {
     params: Params<B>,
     key: SecretKey<B>,
     public_key: PublicKey<B>,
 }
 
-fn new_setup<B: Backend>(l: u8) -> Setup<B> {
+fn new_setup<B: BackendFixedBaseExt>(l: u8) -> Setup<B> {
     let params = Params::<B>::new(l).unwrap();
-    let key = SecretKey::<B>::generate().unwrap();
+    let key = random_key::<B>(&mut os_rng::<B>());
     let public_key = key.public_key();
     Setup {
         params,
@@ -58,7 +60,7 @@ fn new_setup<B: Backend>(l: u8) -> Setup<B> {
     }
 }
 
-fn issue<B: Backend>(setup: &Setup<B>, ctx: &[u8], c: u64) -> Credential<B> {
+fn issue<B: BackendFixedBaseExt>(setup: &Setup<B>, ctx: &[u8], c: u64) -> Credential<B> {
     let (state, request) = issue_request(&setup.params).unwrap();
     let request = IssueRequestMessage::from_bytes(&setup.params, &request.to_bytes()).unwrap();
     let response = issue_response(
@@ -73,7 +75,7 @@ fn issue<B: Backend>(setup: &Setup<B>, ctx: &[u8], c: u64) -> Credential<B> {
 }
 
 /// One spend and refund, through the encodings.
-fn spend<B: Backend>(
+fn spend<B: BackendFixedBaseExt>(
     setup: &Setup<B>,
     credential: Credential<B>,
     s: u64,
@@ -90,7 +92,7 @@ fn spend<B: Backend>(
     (credential, message)
 }
 
-fn full_flow<B: Backend>() {
+fn full_flow<B: BackendFixedBaseExt>() {
     let setup = new_setup::<B>(8);
     let credential = issue(&setup, CTX, 10);
     assert_eq!(credential.balance(), 10);
@@ -115,7 +117,7 @@ fn full_flow<B: Backend>() {
     }
 }
 
-fn contexts_are_bound<B: Backend>() {
+fn contexts_are_bound<B: BackendFixedBaseExt>() {
     let setup = new_setup::<B>(4);
     let (state, request) = issue_request(&setup.params).unwrap();
     let response = issue_response(
@@ -154,7 +156,7 @@ fn contexts_are_bound<B: Backend>() {
     );
 }
 
-fn refunds_are_bound_to_their_spend<B: Backend>() {
+fn refunds_are_bound_to_their_spend<B: BackendFixedBaseExt>() {
     let setup = new_setup::<B>(4);
     let first = issue(&setup, CTX, 5);
     let second = issue(&setup, CTX, 5);
@@ -172,7 +174,7 @@ fn refunds_are_bound_to_their_spend<B: Backend>() {
     let _ = refund1;
 }
 
-fn unverified_spend_cannot_authorize_refund<B: Backend>() {
+fn unverified_spend_cannot_authorize_refund<B: BackendFixedBaseExt>() {
     let setup = new_setup::<B>(8);
     let credential = issue(&setup, CTX, 200);
     let (_, mut spend) = prove_spend(&setup.params, credential, CTX, 0, 0, CHALLENGE).unwrap();
@@ -186,7 +188,7 @@ fn unverified_spend_cannot_authorize_refund<B: Backend>() {
     );
 }
 
-fn amounts_are_bounded<B: Backend>() {
+fn amounts_are_bounded<B: BackendFixedBaseExt>() {
     let setup = new_setup::<B>(4);
     let (state, request) = issue_request(&setup.params).unwrap();
     assert_eq!(
@@ -251,7 +253,7 @@ fn amounts_are_bounded<B: Backend>() {
     );
 }
 
-fn balance_width_bounds<B: Backend>() {
+fn balance_width_bounds<B: BackendFixedBaseExt>() {
     assert_eq!(Params::<B>::new(0).unwrap_err(), Error::InvalidInput);
     assert_eq!(
         Params::<B>::new(MAX_BALANCE_WIDTH + 1).unwrap_err(),
@@ -297,7 +299,7 @@ fn weighted_ranges_cover_exact_bounds() {
     assert_eq!(spend_weights(4, 0, 16), Err(Error::Amount));
 }
 
-fn weighted_sums_match_direct_calculation<B: Backend>() {
+fn weighted_sums_match_direct_calculation<B: BackendFixedBaseExt>() {
     use crate::statements::{range_weights, weighted_points, weighted_scalars};
 
     let generator = B::Point::generator();
@@ -328,7 +330,7 @@ fn weighted_sums_match_direct_calculation<B: Backend>() {
     }
 }
 
-fn tampering_is_rejected<B: Backend>() {
+fn tampering_is_rejected<B: BackendFixedBaseExt>() {
     let setup = new_setup::<B>(4);
     let (state, request) = issue_request(&setup.params).unwrap();
     let request_bytes = request.to_bytes();
@@ -413,7 +415,7 @@ fn tampering_is_rejected<B: Backend>() {
     finalize_refund(&setup.params, &setup.public_key, CTX, state, &refund).unwrap();
 }
 
-fn shape_must_match_amounts<B: Backend>() {
+fn shape_must_match_amounts<B: BackendFixedBaseExt>() {
     let setup = new_setup::<B>(4);
     let credential = issue(&setup, CTX, 5);
     let (_, message) = prove_spend(&setup.params, credential, CTX, 3, 0, CHALLENGE).unwrap();
@@ -482,7 +484,7 @@ fn shape_must_match_amounts<B: Backend>() {
     assert_eq!(RefundMessage::<B>::LENGTH, 137);
 }
 
-fn non_canonical_encodings_are_rejected<B: Backend>() {
+fn non_canonical_encodings_are_rejected<B: BackendFixedBaseExt>() {
     let setup = new_setup::<B>(4);
     let (_, request) = issue_request(&setup.params).unwrap();
     let bytes = request.to_bytes();
@@ -519,36 +521,29 @@ fn non_canonical_encodings_are_rejected<B: Backend>() {
         PublicKey::<B>::from_bytes(&[0; 33]).unwrap_err(),
         Error::Deserialize
     );
-    assert_eq!(
-        SecretKey::<B>::from_bytes(&[0; 32]).unwrap_err(),
-        Error::Deserialize
-    );
-    assert_eq!(
-        SecretKey::<B>::from_bytes(&crate::backend::ORDER).unwrap_err(),
-        Error::Deserialize
-    );
 }
 
 fn keys_round_trip<B: Backend>() {
-    let key = SecretKey::<B>::generate().unwrap();
-    let restored = SecretKey::<B>::from_bytes(&key.to_bytes()).unwrap();
-    assert_eq!(restored.public_key(), key.public_key());
+    let key = random_key::<B>(&mut os_rng::<B>());
     let public_key = PublicKey::<B>::from_bytes(&key.public_key().to_bytes()).unwrap();
     assert_eq!(public_key, key.public_key());
-    let seeded = SecretKey::<B>::from_seed(&[7; 48], b"GenerateKeyPair").unwrap();
-    let mut rng = Replay::constant(7, 48);
-    let generated = SecretKey::<B>::generate_with(&mut rng).unwrap();
-    rng.finish();
-    assert_eq!(seeded.to_bytes(), generated.to_bytes());
+    // Generated seeds are fresh.
+    let seed = B::generate_seed().unwrap();
+    assert_ne!(*seed, *B::generate_seed().unwrap());
+    SecretKey::<B>::from_seed(&seed).unwrap();
+    // A seed determines its key.
+    let seeded = SecretKey::<B>::from_seed(&[7; 48]).unwrap();
+    assert_eq!(
+        seeded.public_key(),
+        SecretKey::<B>::from_seed(&[7; 48]).unwrap().public_key()
+    );
     assert_ne!(
-        seeded.to_bytes(),
-        SecretKey::<B>::from_seed(&[7; 48], b"other")
-            .unwrap()
-            .to_bytes()
+        seeded.public_key(),
+        SecretKey::<B>::from_seed(&[8; 48]).unwrap().public_key()
     );
 }
 
-fn proofs_are_deterministic_in_the_randomness<B: Backend>() {
+fn proofs_are_deterministic_in_the_randomness<B: BackendFixedBaseExt>() {
     let setup = new_setup::<B>(4);
     let mut rng = Replay::constant(3, 2 * 48);
     let (_, first) = issue_request_with(&setup.params, &mut rng).unwrap();
@@ -577,7 +572,7 @@ fn proofs_are_deterministic_in_the_randomness<B: Backend>() {
 /// `ValidateInstance` checks 8 and 9 for elements and images that are
 /// computed rather than deserialized: each statement's `validate` must
 /// reject the identity on its own, before any proof is examined.
-fn statements_reject_identity_elements<B: Backend>() {
+fn statements_reject_identity_elements<B: BackendFixedBaseExt>() {
     use crate::backend::{FixedBase, Point};
     use crate::sigma::Statement;
     use crate::statements::{Commitment, Signature, Spend};
@@ -657,19 +652,18 @@ fn statements_reject_identity_elements<B: Backend>() {
     ));
 }
 
-fn credentials_zeroize<B: Backend>() {
+fn credentials_zeroize<B: BackendFixedBaseExt>() {
     // The Drop impls run without panicking on every record type.
     let setup = new_setup::<B>(4);
     let credential = issue(&setup, CTX, 5);
     let (state, _) = prove_spend(&setup.params, credential, CTX, 1, 0, CHALLENGE).unwrap();
     drop(state);
     drop(setup);
-    let mut rng = os_rng::<B>();
-    let _ = SecretKey::<B>::generate_with(&mut rng);
+    drop(random_key::<B>(&mut os_rng::<B>()));
     let _ = B::Scalar::default();
 }
 
-fn entropy_failure_is_an_error<B: Backend>() {
+fn entropy_failure_is_an_error<B: BackendFixedBaseExt>() {
     struct Failing;
     impl crate::random::Random for Failing {
         fn fill(&mut self, _: &mut [u8]) -> Result<(), Error> {

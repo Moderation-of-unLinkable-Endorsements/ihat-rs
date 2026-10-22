@@ -18,15 +18,18 @@
 use alloc::vec::Vec;
 use core::fmt;
 
+use ec_ihat::hash::BackendHashExt;
 use subtle::{Choice, ConditionallySelectable};
 use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};
 
-use crate::backend::{Backend, FixedBase, POINT_LENGTH, Point, SCALAR_LENGTH, Scalar};
+use crate::backend::{
+    Backend, BackendFixedBaseExt, FixedBase, POINT_LENGTH, Point, SCALAR_LENGTH, Scalar,
+};
 use crate::hash::{self, NSEED};
 use crate::random::{Random, SystemRandom};
 use crate::sigma;
 use crate::statements::{Commitment, Signature, Spend, fixed, spend_weights, weighted_scalars};
-use crate::{DefaultBackend, Error, MAX_BALANCE_WIDTH};
+use crate::{DefaultBackend, Error, MAX_BALANCE_WIDTH, PROTOCOL_CONTEXT};
 
 /// The group generator `B` and the four ciphersuite generators, the latter
 /// with whatever precomputation the backend offers.
@@ -34,7 +37,7 @@ use crate::{DefaultBackend, Error, MAX_BALANCE_WIDTH};
 /// `H1` commits to the balance, `H2` to the nullifier, `H3` is the
 /// blinding base, and `H4` binds the credential context.
 #[derive(Clone, Debug)]
-pub(crate) struct Generators<B: Backend> {
+pub(crate) struct Generators<B: BackendFixedBaseExt> {
     pub(crate) g: B::Point,
     pub(crate) h1: B::FixedBase,
     pub(crate) h2: B::FixedBase,
@@ -48,7 +51,7 @@ pub(crate) struct Generators<B: Backend> {
 /// lifetime of a key and credential context, and every party of a
 /// deployment uses the same value.
 #[derive(Clone, Debug)]
-pub struct Params<B: Backend = DefaultBackend> {
+pub struct Params<B: BackendFixedBaseExt = DefaultBackend> {
     l: u8,
     max_amount: u64,
     gens: Generators<B>,
@@ -57,7 +60,7 @@ pub struct Params<B: Backend = DefaultBackend> {
     sid_refund: [u8; 32],
 }
 
-impl<B: Backend> Params<B> {
+impl<B: BackendFixedBaseExt> Params<B> {
     /// Instantiates the ciphersuite at balance width `balance_width`, which
     /// must be in `1..=64`.
     pub fn new(balance_width: u8) -> Result<Self, Error> {
@@ -76,8 +79,7 @@ impl<B: Backend> Params<B> {
             h3: generator(b"GenH3")?,
             h4: generator(b"GenH4")?,
         };
-        let session_id =
-            |label: &[u8]| Ok::<_, Error>(sigma::session_id::<B>(&sigma::tag(label, &[])?));
+        let session_id = |label: &[u8]| Ok::<_, Error>(sigma::session_id(&sigma::tag(label, &[])?));
         Ok(Self {
             l: balance_width,
             max_amount: u64::MAX >> (64 - u32::from(balance_width)),
@@ -123,47 +125,17 @@ impl<B: Backend> Params<B> {
 /// The Moderator's key pair. The secret scalar both signs and verifies.
 #[derive(Clone)]
 pub struct SecretKey<B: Backend = DefaultBackend> {
-    sk: B::Scalar,
+    pub(crate) sk: B::Scalar,
     pk: B::Point,
 }
 
 impl<B: Backend> SecretKey<B> {
-    /// `G.GenerateKeyPair()`: a key pair from fresh randomness.
-    pub fn generate() -> Result<Self, Error> {
-        Self::generate_with(&mut SystemRandom::<B>::new())
-    }
-
-    pub(crate) fn generate_with<R: Random>(rng: &mut R) -> Result<Self, Error> {
-        let mut seed = [0u8; NSEED];
-        rng.fill(&mut seed)?;
-        let key = Self::from_seed(&seed, b"GenerateKeyPair");
-        seed.zeroize();
-        key
-    }
-
-    /// `G.DeriveKeyPair(seed, info)`: a key pair from a seed of `Nseed`
-    /// uniformly random bytes that is used for nothing else.
-    pub fn from_seed(seed: &[u8; NSEED], info: &[u8]) -> Result<Self, Error> {
-        Ok(Self::from_scalar(hash::derive_key_scalar::<B>(seed, info)?))
-    }
-
-    /// The key pair whose secret scalar is `bytes`, big-endian.
-    pub fn from_bytes(bytes: &[u8; SCALAR_LENGTH]) -> Result<Self, Error> {
-        let sk = hash::require(B::Scalar::from_bytes(bytes), Error::Deserialize)?;
-        if bool::from(sk.is_zero()) {
-            return Err(Error::Deserialize);
-        }
-        Ok(Self::from_scalar(sk))
-    }
-
-    fn from_scalar(sk: B::Scalar) -> Self {
+    /// `G.DeriveKeyPair(seed, "GenerateKeyPair")`: derives a key pair from a
+    /// seed.
+    pub fn from_seed(seed: &[u8; NSEED]) -> Result<Self, Error> {
+        let sk = B::derive_key_scalar(PROTOCOL_CONTEXT, seed, b"GenerateKeyPair")?;
         let pk = B::Point::mul_generator(&sk);
-        Self { sk, pk }
-    }
-
-    /// The secret scalar `skM`, big-endian.
-    pub fn to_bytes(&self) -> [u8; SCALAR_LENGTH] {
-        self.sk.to_bytes()
+        Ok(Self { sk, pk })
     }
 
     /// The public key `pkM`.
@@ -337,7 +309,7 @@ impl<B: Backend> SpendMessage<B> {
 /// [`issue_response`] never signs an unchecked request.
 #[must_use = "pass this value to issue_response"]
 #[derive(Debug)]
-pub struct VerifiedIssueRequest<'a, B: Backend = DefaultBackend> {
+pub struct VerifiedIssueRequest<'a, B: BackendFixedBaseExt = DefaultBackend> {
     params: &'a Params<B>,
     request: &'a IssueRequestMessage<B>,
 }
@@ -350,7 +322,7 @@ pub struct VerifiedIssueRequest<'a, B: Backend = DefaultBackend> {
 /// atomically reject and record its nullifier. Holding the value borrows the
 /// exact message, key, and configuration that were verified.
 #[must_use = "check the allowance and nullifier, then pass this value to issue_refund"]
-pub struct VerifiedSpend<'a, B: Backend = DefaultBackend> {
+pub struct VerifiedSpend<'a, B: BackendFixedBaseExt = DefaultBackend> {
     params: &'a Params<B>,
     key: &'a SecretKey<B>,
     spend: &'a SpendMessage<B>,
@@ -358,7 +330,7 @@ pub struct VerifiedSpend<'a, B: Backend = DefaultBackend> {
     k_prime: B::Point,
 }
 
-impl<B: Backend> VerifiedSpend<'_, B> {
+impl<B: BackendFixedBaseExt> VerifiedSpend<'_, B> {
     /// The nullifier of the verified Credential, big-endian.
     pub fn nullifier(&self) -> [u8; SCALAR_LENGTH] {
         self.spend.nullifier()
@@ -375,7 +347,7 @@ impl<B: Backend> VerifiedSpend<'_, B> {
     }
 }
 
-impl<B: Backend> fmt::Debug for VerifiedSpend<'_, B> {
+impl<B: BackendFixedBaseExt> fmt::Debug for VerifiedSpend<'_, B> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("VerifiedSpend")
             .field("nullifier", &self.nullifier())
@@ -456,14 +428,14 @@ secret_record!(ClientSpendState { kstar, r_star; k_prime; v1, s, a });
 /// `CreateContextScalar(ctx_cred)`.
 fn context_scalar<B: Backend>(ctx_cred: &[u8]) -> Result<B::Scalar, Error> {
     let len = u16::try_from(ctx_cred.len()).map_err(|_| Error::InvalidInput)?;
-    Ok(hash::hash_to_scalar::<B>(
+    Ok(B::hash_to_scalar_with_dst(
         &[&len.to_be_bytes(), ctx_cred, b"CredentialContext"],
-        hash::DST_HASH_TO_SCALAR,
+        &[hash::DST_HASH_TO_SCALAR],
     ))
 }
 
 /// `B + c * H1 + ctx * H4 + K`, the message an issuance signs.
-fn issuance_message<B: Backend>(
+fn issuance_message<B: BackendFixedBaseExt>(
     gens: &Generators<B>,
     c: u64,
     ctx: &B::Scalar,
@@ -487,7 +459,8 @@ fn signing_exponent<B: Backend, R: Random>(
     let mut rand = Zeroizing::new([0u8; NSEED]);
     rng.fill(&mut *rand)?;
     let sk_bytes = Zeroizing::new(key.sk.to_bytes());
-    let derived = hash::derive_nonces::<B>(
+    let derived = B::derive_nonces(
+        PROTOCOL_CONTEXT,
         &*sk_bytes,
         b"e",
         &[
@@ -599,7 +572,7 @@ type RangeBlock<B> = (
 ///
 /// `witness` must have room for `3 * l` more scalars, so that extending it
 /// never reallocates.
-fn range_block<B: Backend>(
+fn range_block<B: BackendFixedBaseExt>(
     gens: &Generators<B>,
     value: u64,
     weights: &[u64],
@@ -633,13 +606,13 @@ fn range_block<B: Backend>(
 // ---------------------------------------------------------------------------
 
 /// `IssueRequest`: commits to a fresh nullifier and blinding factor.
-pub fn issue_request<B: Backend>(
+pub fn issue_request<B: BackendFixedBaseExt>(
     params: &Params<B>,
 ) -> Result<(ClientIssuanceState<B>, IssueRequestMessage<B>), Error> {
     issue_request_with(params, &mut SystemRandom::<B>::new())
 }
 
-pub(crate) fn issue_request_with<B: Backend, R: Random>(
+pub(crate) fn issue_request_with<B: BackendFixedBaseExt, R: Random>(
     params: &Params<B>,
     rng: &mut R,
 ) -> Result<(ClientIssuanceState<B>, IssueRequestMessage<B>), Error> {
@@ -647,7 +620,7 @@ pub(crate) fn issue_request_with<B: Backend, R: Random>(
     let mut rand = Zeroizing::new([0u8; NSEED]);
     rng.fill(&mut *rand)?;
     // `derived` holds `(k, r)` and is wiped on every return.
-    let derived = hash::derive_scalars::<B>(&*rand, b"IssueRequest", 2)?;
+    let derived = B::derive_scalars(PROTOCOL_CONTEXT, &*rand, b"IssueRequest", 2)?;
     drop(rand);
 
     let k_commitment = fixed::<B, 2>([(&gens.h2, &derived[0]), (&gens.h3, &derived[1])]);
@@ -675,7 +648,7 @@ pub(crate) fn issue_request_with<B: Backend, R: Random>(
 ///
 /// Lets the Moderator reject a malformed request before it commits any
 /// other state, such as a redemption, and sign only afterwards.
-pub fn verify_issue_request<'a, B: Backend>(
+pub fn verify_issue_request<'a, B: BackendFixedBaseExt>(
     params: &'a Params<B>,
     request: &'a IssueRequestMessage<B>,
 ) -> Result<VerifiedIssueRequest<'a, B>, Error> {
@@ -689,7 +662,7 @@ pub fn verify_issue_request<'a, B: Backend>(
 
 /// `IssueResponse`, second half: signs a Credential with balance `c` under
 /// `ctx_cred` for a request checked by [`verify_issue_request`].
-pub fn issue_response<B: Backend>(
+pub fn issue_response<B: BackendFixedBaseExt>(
     key: &SecretKey<B>,
     ctx_cred: &[u8],
     c: u64,
@@ -698,7 +671,7 @@ pub fn issue_response<B: Backend>(
     issue_response_with(key, ctx_cred, c, verified, &mut SystemRandom::<B>::new())
 }
 
-pub(crate) fn issue_response_with<B: Backend, R: Random>(
+pub(crate) fn issue_response_with<B: BackendFixedBaseExt, R: Random>(
     key: &SecretKey<B>,
     ctx_cred: &[u8],
     c: u64,
@@ -717,7 +690,7 @@ pub(crate) fn issue_response_with<B: Backend, R: Random>(
 ///
 /// Consumes `state`; the Client must not finalize one state against two
 /// responses.
-pub fn finalize_issue<B: Backend>(
+pub fn finalize_issue<B: BackendFixedBaseExt>(
     params: &Params<B>,
     public_key: &PublicKey<B>,
     ctx_cred: &[u8],
@@ -756,7 +729,7 @@ pub fn finalize_issue<B: Backend>(
 /// before the message leaves the Client; the refund is unusable without
 /// it, and a second proof from the same Credential reveals the same
 /// nullifier.
-pub fn prove_spend<B: Backend>(
+pub fn prove_spend<B: BackendFixedBaseExt>(
     params: &Params<B>,
     credential: Credential<B>,
     ctx_cred: &[u8],
@@ -775,7 +748,7 @@ pub fn prove_spend<B: Backend>(
     )
 }
 
-pub(crate) fn prove_spend_with<B: Backend, R: Random>(
+pub(crate) fn prove_spend_with<B: BackendFixedBaseExt, R: Random>(
     params: &Params<B>,
     credential: Credential<B>,
     ctx_cred: &[u8],
@@ -800,7 +773,7 @@ pub(crate) fn prove_spend_with<B: Backend, R: Random>(
 
     let ctx = context_scalar::<B>(ctx_cred)?;
     let tag = sigma::tag(b"Spend", &[ctx_spend])?;
-    let session_id = sigma::session_id::<B>(&tag);
+    let session_id = sigma::session_id(&tag);
 
     // Four fixed scalars, then one for each weighted bit of the remainder or
     // one for the commitment of a refresh.
@@ -810,7 +783,7 @@ pub(crate) fn prove_spend_with<B: Backend, R: Random>(
     // `derived` holds every secret scalar of the spend and is wiped on every
     // return; the values computed from them below are held in wrappers that
     // wipe them on drop.
-    let derived = hash::derive_scalars::<B>(&*rand, b"ProveSpend", count)?;
+    let derived = B::derive_scalars(PROTOCOL_CONTEXT, &*rand, b"ProveSpend", count)?;
     drop(rand);
     let (r1, r2, kstar, rn) = (&derived[0], &derived[1], &derived[2], &derived[3]);
 
@@ -921,7 +894,7 @@ pub(crate) fn prove_spend_with<B: Backend, R: Random>(
 /// Does not check the nullifier against the Moderator's record, nor
 /// whether the Moderator grants the allowance `a`; the caller must do both
 /// before issuing a refund.
-pub fn verify_spend<'a, B: Backend>(
+pub fn verify_spend<'a, B: BackendFixedBaseExt>(
     params: &'a Params<B>,
     key: &'a SecretKey<B>,
     ctx_cred: &[u8],
@@ -938,7 +911,7 @@ pub fn verify_spend<'a, B: Backend>(
     let a_bar = SecretPoint(spend.a_prime.mul(&key.sk));
     let h1_prime = fixed::<B, 2>([(&gens.h2, &spend.k), (&gens.h4, &ctx)]).add(&gens.g);
     let statement = spend_statement(params, spend, &a_bar, &h1_prime)?;
-    sigma::verify::<B, _>(&sigma::session_id::<B>(&tag), &statement, &spend.pok)?;
+    sigma::verify::<B, _>(&sigma::session_id(&tag), &statement, &spend.pok)?;
     let k_prime = statement.balance_commitment();
     Ok(VerifiedSpend {
         params,
@@ -949,7 +922,7 @@ pub fn verify_spend<'a, B: Backend>(
     })
 }
 
-fn spend_statement<'a, B: Backend>(
+fn spend_statement<'a, B: BackendFixedBaseExt>(
     params: &'a Params<B>,
     spend: &'a SpendMessage<B>,
     a_bar: &'a B::Point,
@@ -971,7 +944,7 @@ fn spend_statement<'a, B: Backend>(
 }
 
 /// `B + K_prime + t * H1 + ctx * H4`, the message a refund signs.
-fn refund_message<B: Backend>(
+fn refund_message<B: BackendFixedBaseExt>(
     gens: &Generators<B>,
     k_prime: &B::Point,
     t: u64,
@@ -1002,14 +975,14 @@ fn refund_message<B: Backend>(
 ///     act::issue_refund(params, key, b"credential context", spend, 0)
 /// }
 /// ```
-pub fn issue_refund<B: Backend>(
+pub fn issue_refund<B: BackendFixedBaseExt>(
     verified: VerifiedSpend<'_, B>,
     t: u64,
 ) -> Result<RefundMessage<B>, Error> {
     issue_refund_with(verified, t, &mut SystemRandom::<B>::new())
 }
 
-pub(crate) fn issue_refund_with<B: Backend, R: Random>(
+pub(crate) fn issue_refund_with<B: BackendFixedBaseExt, R: Random>(
     verified: VerifiedSpend<'_, B>,
     t: u64,
     rng: &mut R,
@@ -1035,7 +1008,7 @@ pub(crate) fn issue_refund_with<B: Backend, R: Random>(
 ///
 /// Consumes `state`; the Client must not finalize one state against two
 /// refunds.
-pub fn finalize_refund<B: Backend>(
+pub fn finalize_refund<B: BackendFixedBaseExt>(
     params: &Params<B>,
     public_key: &PublicKey<B>,
     ctx_cred: &[u8],

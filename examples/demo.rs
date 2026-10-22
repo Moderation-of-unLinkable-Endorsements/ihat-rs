@@ -16,15 +16,16 @@
 //! printing the message sizes and balances.
 
 use act::{
-    Credential, IssueRequestMessage, IssueResponseMessage, Params, RefundMessage, SecretKey,
-    SpendMessage, finalize_issue, finalize_refund, issue_refund, issue_request, issue_response,
-    prove_spend, verify_issue_request, verify_spend,
+    Backend, Credential, DefaultBackend, IssueRequestMessage, IssueResponseMessage, Params,
+    RefundMessage, SecretKey, SpendMessage, finalize_issue, finalize_refund, issue_refund,
+    issue_request, issue_response, prove_spend, verify_issue_request, verify_spend,
 };
 
 fn main() -> Result<(), act::Error> {
     let params: Params = Params::new(8)?;
     let ctx_cred = b"epoch-1";
-    let key = SecretKey::generate()?;
+    let key_seed = DefaultBackend::generate_seed()?;
+    let key = SecretKey::from_seed(&key_seed)?;
     let public_key = key.public_key();
 
     // Issuance, through the wire encodings.

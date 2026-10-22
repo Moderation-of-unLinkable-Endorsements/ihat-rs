@@ -26,7 +26,7 @@
 use alloc::vec::Vec;
 
 use crate::Error;
-use crate::backend::{Backend, FixedBase, Point, Scalar};
+use crate::backend::{Backend, BackendFixedBaseExt, FixedBase, Point, Scalar};
 use crate::protocol::Generators;
 use crate::sigma::{MINUS_ONE, ONE, RelationWriter, Statement, coefficient};
 
@@ -40,7 +40,7 @@ fn nonidentity<P: Point>(point: &P) -> Result<(), Error> {
 }
 
 /// `sum_i scalar_i * base_i` over precomputed bases.
-pub(crate) fn fixed<B: Backend, const N: usize>(
+pub(crate) fn fixed<B: BackendFixedBaseExt, const N: usize>(
     terms: [(&B::FixedBase, &B::Scalar); N],
 ) -> B::Point {
     let mut terms = terms.into_iter();
@@ -150,12 +150,12 @@ pub(crate) fn weighted_points<P: Point>(points: &[P], weights: &[u64]) -> P {
 // ---------------------------------------------------------------------------
 
 /// The `Commitment` relation of the issuance request.
-pub(crate) struct Commitment<'a, B: Backend> {
+pub(crate) struct Commitment<'a, B: BackendFixedBaseExt> {
     pub(crate) gens: &'a Generators<B>,
     pub(crate) k: &'a B::Point,
 }
 
-impl<B: Backend> Statement<B> for Commitment<'_, B> {
+impl<B: BackendFixedBaseExt> Statement<B> for Commitment<'_, B> {
     fn num_scalars(&self) -> usize {
         2
     }
@@ -332,7 +332,7 @@ enum Remainder<'a, B: Backend> {
 }
 
 /// The `Spend` relation.
-pub(crate) struct Spend<'a, B: Backend> {
+pub(crate) struct Spend<'a, B: BackendFixedBaseExt> {
     gens: &'a Generators<B>,
     a_prime: &'a B::Point,
     b_bar: &'a B::Point,
@@ -342,7 +342,7 @@ pub(crate) struct Spend<'a, B: Backend> {
     remainder: Remainder<'a, B>,
 }
 
-impl<'a, B: Backend> Spend<'a, B> {
+impl<'a, B: BackendFixedBaseExt> Spend<'a, B> {
     /// Builds the statement, rejecting a shape that does not match `s` and
     /// `a` or the balance width `l`.
     #[allow(clippy::too_many_arguments)]
@@ -480,7 +480,7 @@ impl<'a, B: Backend> Spend<'a, B> {
     }
 }
 
-impl<B: Backend> Statement<B> for Spend<'_, B> {
+impl<B: BackendFixedBaseExt> Statement<B> for Spend<'_, B> {
     fn num_scalars(&self) -> usize {
         match &self.remainder {
             Remainder::Bits(range) => FIXED_SCALARS + 3 * range.len(),

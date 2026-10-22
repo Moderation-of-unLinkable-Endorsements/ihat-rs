@@ -33,14 +33,16 @@
 //! # Flow
 //!
 //! ```
-//! use act::{Params, SecretKey};
+//! use act::{Backend, DefaultBackend, Params, SecretKey};
 //!
 //! // Both parties agree on the balance width `L` and a credential context.
 //! let params: Params = Params::new(8)?;
 //! let ctx_cred = b"epoch-42";
 //!
-//! // The Moderator holds the key pair and publishes the public key.
-//! let secret_key = SecretKey::generate()?;
+//! // The Moderator derives its key pair from a secret random seed, which it
+//! // keeps in order to restore the key, and publishes the public key.
+//! let secret_key_seed = DefaultBackend::generate_seed()?;
+//! let secret_key: SecretKey = SecretKey::from_seed(&secret_key_seed)?;
 //! let public_key = secret_key.public_key();
 //!
 //! // Issuance: the Client requests, the Moderator chooses the balance.
@@ -125,7 +127,7 @@ mod readme {}
 
 use core::fmt;
 
-pub use backend::Backend;
+pub use backend::{Backend, BackendFixedBaseExt};
 pub use protocol::{
     ClientIssuanceState, ClientSpendState, Credential, IssueRequestMessage, IssueResponseMessage,
     Params, PublicKey, RefundMessage, SecretKey, SpendMessage, VerifiedIssueRequest, VerifiedSpend,
@@ -178,6 +180,21 @@ pub enum Error {
     InvalidInput,
     /// The system random number generator is unavailable.
     Entropy,
+}
+
+impl From<ec_ihat::Error> for Error {
+    fn from(error: ec_ihat::Error) -> Self {
+        match error {
+            ec_ihat::Error::Deserialize => Self::Deserialize,
+            ec_ihat::Error::Verify => Self::Verify,
+            ec_ihat::Error::Derive => Self::Derive,
+            ec_ihat::Error::InvalidInput => Self::InvalidInput,
+            ec_ihat::Error::Entropy => Self::Entropy,
+            // The shared crate may add variants; a new one has no mirror in
+            // this draft's errors, so it surfaces as an input rejection.
+            _ => Self::InvalidInput,
+        }
+    }
 }
 
 impl fmt::Display for Error {

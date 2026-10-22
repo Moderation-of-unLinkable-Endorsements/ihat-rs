@@ -40,6 +40,6 @@ impl<B: Backend> SystemRandom<B> {
 
 impl<B: Backend> Random for SystemRandom<B> {
     fn fill(&mut self, buf: &mut [u8]) -> Result<(), Error> {
-        B::random_bytes(buf)
+        B::random_bytes(buf).map_err(|_| Error::Entropy)
     }
 }

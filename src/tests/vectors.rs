@@ -22,7 +22,7 @@ use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 
 use super::Replay;
-use crate::backend::{Backend, Point};
+use crate::backend::{BackendFixedBaseExt, Point, Scalar};
 use crate::protocol::{
     ClientIssuanceState, ClientSpendState, Credential, IssueRequestMessage, IssueResponseMessage,
     Params, RefundMessage, SecretKey, SpendMessage, finalize_issue, finalize_refund,
@@ -81,7 +81,7 @@ impl Vectors {
     }
 }
 
-fn replay<B: Backend>(text: &str) {
+fn replay<B: BackendFixedBaseExt>(text: &str) {
     let v = Vectors(parse(text));
     let params = Params::<B>::new(v.int("suite.L") as u8).unwrap();
     let ctx_cred = v.hex("suite.ctx_cred");
@@ -98,10 +98,9 @@ fn replay<B: Backend>(text: &str) {
         assert_eq!(ctx.to_vec(), v.hex("suite.ctx"));
     }
 
-    let mut rng = Replay::new(&v.hex("key.rand"));
-    let key = SecretKey::<B>::generate_with(&mut rng).unwrap();
-    rng.finish();
-    assert_eq!(key.to_bytes().to_vec(), v.hex("key.skM"));
+    let seed: [u8; crate::SEED_LENGTH] = v.hex("key.rand").try_into().unwrap();
+    let key = SecretKey::<B>::from_seed(&seed).unwrap();
+    assert_eq!(key.sk.to_bytes().to_vec(), v.hex("key.skM"));
     assert_eq!(key.public_key().to_bytes().to_vec(), v.hex("key.pkM"));
     let public_key = key.public_key();
 
@@ -193,11 +192,11 @@ fn replay<B: Backend>(text: &str) {
     }
 }
 
-fn draft_l4<B: Backend>() {
+fn draft_l4<B: BackendFixedBaseExt>() {
     replay::<B>(DRAFT_L4);
 }
 
-fn extended<B: Backend>() {
+fn extended<B: BackendFixedBaseExt>() {
     for (_name, text) in EXTENDED {
         replay::<B>(text);
     }

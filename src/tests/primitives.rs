@@ -16,7 +16,11 @@
 
 use alloc::vec::Vec;
 
-use crate::backend::{Backend, Point, SCALAR_LENGTH, Scalar, Shake128, Shake128Reader};
+use ec_ihat::hash::{BackendHashExt, Error as HashError};
+use shake::{ExtendableOutput, Shake128, Update, XofReader};
+
+use crate::PROTOCOL_CONTEXT;
+use crate::backend::{Backend, BackendFixedBaseExt, Point, SCALAR_LENGTH, Scalar};
 use crate::hash::{self, XmdPrefix};
 use crate::sigma::{self, MINUS_ONE, ONE, coefficient, order_minus};
 
@@ -42,11 +46,11 @@ fn expand_message_xmd_vectors<B: Backend>() {
     ];
     for (msg, len, expected) in cases {
         let mut out = alloc::vec![0u8; len];
-        XmdPrefix::<B::Sha256>::new(&[]).expand_into(&[msg], DST, &mut out);
+        XmdPrefix::<B::Sha256>::new(&[]).expand_into(&[msg], &[DST], &mut out);
         assert_eq!(hex::encode(&out), expected);
         // The prefix split does not change the output.
         if !msg.is_empty() {
-            XmdPrefix::<B::Sha256>::new(&[&msg[..1]]).expand_into(&[&msg[1..]], DST, &mut out);
+            XmdPrefix::<B::Sha256>::new(&[&msg[..1]]).expand_into(&[&msg[1..]], &[DST], &mut out);
             assert_eq!(hex::encode(&out), expected);
         }
     }
@@ -88,8 +92,9 @@ fn hash_to_curve_vectors<B: Backend>() {
     }
 }
 
-/// SHAKE128 known answers, through the backend's sponge.
-fn shake128_known_answers<B: Backend>() {
+/// SHAKE128 known answers, through the protocol's sponge.
+#[test]
+fn shake128_known_answers() {
     let cases: [(&[u8], &str); 2] = [
         (
             b"",
@@ -101,28 +106,29 @@ fn shake128_known_answers<B: Backend>() {
         ),
     ];
     for (msg, expected) in cases {
-        let mut sponge = B::Shake128::new();
-        sponge.absorb(msg);
+        let mut sponge = Shake128::default();
+        sponge.update(msg);
         let mut out = [0u8; 32];
-        sponge.finalize().read(&mut out);
+        sponge.finalize_xof().read(&mut out);
         assert_eq!(hex::encode(out), expected);
     }
     // Split absorbs and split reads see one stream.
-    let mut sponge = B::Shake128::new();
-    sponge.absorb(b"ab");
-    sponge.absorb(b"c");
-    let mut reader = sponge.finalize();
+    let mut sponge = Shake128::default();
+    sponge.update(b"ab");
+    sponge.update(b"c");
+    let mut reader = sponge.finalize_xof();
     let mut out = [0u8; 200];
     reader.read(&mut out[..7]);
     reader.read(&mut out[7..]);
-    let mut sponge = B::Shake128::new();
-    sponge.absorb(b"abc");
+    let mut sponge = Shake128::default();
+    sponge.update(b"abc");
     let mut whole = [0u8; 200];
-    sponge.finalize().read(&mut whole);
+    sponge.finalize_xof().read(&mut whole);
     assert_eq!(out, whole);
 }
 
-fn session_ids_and_tags<B: Backend>() {
+#[test]
+fn session_ids_and_tags() {
     let tag = sigma::tag(b"Spend", &[b"ctx"]).unwrap();
     assert_eq!(
         tag,
@@ -137,13 +143,13 @@ fn session_ids_and_tags<B: Backend>() {
         crate::Error::InvalidInput
     );
     // DeriveSessionID(tag) = SHAKE128(label || zeros(136) || tag)[..32].
-    let mut sponge = B::Shake128::new();
-    sponge.absorb(b"irtf-cfrg-fiat-shamir/session-id");
-    sponge.absorb(&[0u8; 136]);
-    sponge.absorb(&tag);
+    let mut sponge = Shake128::default();
+    sponge.update(b"irtf-cfrg-fiat-shamir/session-id");
+    sponge.update(&[0u8; 136]);
+    sponge.update(&tag);
     let mut expected = [0u8; 32];
-    sponge.finalize().read(&mut expected);
-    assert_eq!(sigma::session_id::<B>(&tag), expected);
+    sponge.finalize_xof().read(&mut expected);
+    assert_eq!(sigma::session_id(&tag), expected);
 }
 
 fn coefficients<B: Backend>() {
@@ -241,7 +247,7 @@ fn point_arithmetic<B: Backend>() {
     assert!(bool::from(zeroized.is_identity()));
 }
 
-fn fixed_base_tables<B: Backend>() {
+fn fixed_base_tables<B: BackendFixedBaseExt>() {
     use crate::backend::FixedBase;
     // A generator computed directly, so that this test needs no SHAKE128
     // and can run under Miri.
@@ -261,7 +267,7 @@ fn fixed_base_tables<B: Backend>() {
     // there, since the fixed cases already cover every digit path.
     let hashed = if cfg!(miri) { 2 } else { 32 };
     for i in 0..hashed {
-        scalars.push(hash::hash_to_scalar::<B>(&[&[i]], b"fixed-base-test"));
+        scalars.push(B::hash_to_scalar_with_dst(&[&[i]], &[b"fixed-base-test"]));
     }
     for scalar in scalars {
         assert_eq!(
@@ -278,8 +284,8 @@ fn derivations<B: Backend>() {
         assert!(dst.ends_with(crate::PROTOCOL_CONTEXT));
     }
     let rand = [1u8; 48];
-    let a = hash::derive_scalars::<B>(&rand, b"a", 3).unwrap();
-    let b = hash::derive_scalars::<B>(&rand, b"b", 3).unwrap();
+    let a = B::derive_scalars(PROTOCOL_CONTEXT, &rand, b"a", 3).unwrap();
+    let b = B::derive_scalars(PROTOCOL_CONTEXT, &rand, b"b", 3).unwrap();
     assert_eq!(a.len(), 3);
     for (x, y) in a.iter().zip(b.iter()) {
         assert_ne!(x.to_bytes(), y.to_bytes());
@@ -288,40 +294,57 @@ fn derivations<B: Backend>() {
     // A change to any part of the input changes every derived scalar.
     let mut changed = rand;
     changed[47] ^= 1;
-    let c = hash::derive_scalars::<B>(&changed, b"a", 3).unwrap();
+    let c = B::derive_scalars(PROTOCOL_CONTEXT, &changed, b"a", 3).unwrap();
     for (x, y) in a.iter().zip(c.iter()) {
         assert_ne!(x.to_bytes(), y.to_bytes());
     }
     let long = [1u8; 49];
     for wrong in [&long[..0], &long[..47], &long[..49]] {
         assert_eq!(
-            hash::derive_scalars::<B>(wrong, b"a", 1).unwrap_err(),
-            crate::Error::InvalidInput
+            B::derive_scalars(PROTOCOL_CONTEXT, wrong, b"a", 1).unwrap_err(),
+            HashError::InvalidInput
         );
         assert_eq!(
-            hash::derive_nonces::<B>(b"secret", b"e", &[b"x"], wrong, 1).unwrap_err(),
-            crate::Error::InvalidInput
+            B::derive_nonces(PROTOCOL_CONTEXT, b"secret", b"e", &[b"x"], wrong, 1).unwrap_err(),
+            HashError::InvalidInput
         );
     }
     assert_eq!(
-        hash::derive_scalars::<B>(&rand, &[0u8; 65536], 1).unwrap_err(),
-        crate::Error::InvalidInput
+        B::derive_scalars(PROTOCOL_CONTEXT, &rand, &[0u8; 65536], 1).unwrap_err(),
+        HashError::InvalidInput
     );
     let seed = [1u8; 48];
-    let nonce = hash::derive_nonces::<B>(b"secret", b"e", &[b"inst", b"ance"], &seed, 2).unwrap();
-    let joined = hash::derive_nonces::<B>(b"secret", b"e", &[b"instance"], &seed, 2).unwrap();
+    let nonce = B::derive_nonces(
+        PROTOCOL_CONTEXT,
+        b"secret",
+        b"e",
+        &[b"inst", b"ance"],
+        &seed,
+        2,
+    )
+    .unwrap();
+    let joined =
+        B::derive_nonces(PROTOCOL_CONTEXT, b"secret", b"e", &[b"instance"], &seed, 2).unwrap();
     assert_eq!(nonce[1].to_bytes(), joined[1].to_bytes());
-    let other = hash::derive_nonces::<B>(b"secret", b"e", &[b"instance"], &[2u8; 48], 2).unwrap();
+    let other = B::derive_nonces(
+        PROTOCOL_CONTEXT,
+        b"secret",
+        b"e",
+        &[b"instance"],
+        &[2u8; 48],
+        2,
+    )
+    .unwrap();
     for (x, y) in nonce.iter().zip(other.iter()) {
         assert_ne!(x.to_bytes(), y.to_bytes());
     }
-    let key = hash::derive_key_scalar::<B>(&seed, b"GenerateKeyPair").unwrap();
+    let key = B::derive_key_scalar(PROTOCOL_CONTEXT, &seed, b"GenerateKeyPair").unwrap();
     assert!(!bool::from(key.is_zero()));
     assert_ne!(key.to_bytes(), a[0].to_bytes());
     // Little- and big-endian reductions agree with the scalar arithmetic.
     let mut bytes = [0u8; 48];
     bytes[47] = 5;
-    assert_eq!(hash::reduce_be_48::<B>(&bytes).to_bytes(), coefficient(5));
+    assert_eq!(B::reduce_be_48(&bytes).to_bytes(), coefficient(5));
     bytes[47] = 0;
     bytes[0] = 5;
     assert_eq!(hash::reduce_le_48::<B>(&bytes).to_bytes(), coefficient(5));
@@ -336,10 +359,7 @@ fn derivations<B: Backend>() {
         let two_192 = B::Scalar::from_bytes(&two_192).unwrap();
         half * two_192 + half
     };
-    assert_eq!(
-        hash::reduce_be_48::<B>(&all).to_bytes(),
-        expected.to_bytes()
-    );
+    assert_eq!(B::reduce_be_48(&all).to_bytes(), expected.to_bytes());
     assert_eq!(
         hash::reduce_le_48::<B>(&all).to_bytes(),
         expected.to_bytes()
@@ -350,8 +370,6 @@ fn derivations<B: Backend>() {
 backend_tests!(
     expand_message_xmd_vectors,
     hash_to_curve_vectors,
-    shake128_known_answers,
-    session_ids_and_tags,
     coefficients,
     scalar_arithmetic,
     point_arithmetic,
@@ -365,6 +383,7 @@ mod parity {
     use crate::backend::boringssl::BoringSsl;
     use crate::backend::rustcrypto::RustCrypto;
     use crate::backend::{Point, Scalar};
+    use ec_ihat::hash::BackendHashExt;
 
     #[test]
     fn generators_and_hashes_agree() {
@@ -377,8 +396,8 @@ mod parity {
         }
         for msg in [&b""[..], b"ctx", &[7u8; 300]] {
             assert_eq!(
-                crate::hash::hash_to_scalar::<RustCrypto>(&[msg], b"dst").to_bytes(),
-                crate::hash::hash_to_scalar::<BoringSsl>(&[msg], b"dst").to_bytes()
+                RustCrypto::hash_to_scalar_with_dst(&[msg], &[b"dst"]).to_bytes(),
+                BoringSsl::hash_to_scalar_with_dst(&[msg], &[b"dst"]).to_bytes()
             );
         }
     }
@@ -387,8 +406,9 @@ mod parity {
     fn spends_interoperate() {
         let rc = crate::Params::<RustCrypto>::new(6).unwrap();
         let bssl = crate::Params::<BoringSsl>::new(6).unwrap();
-        let key_rc = crate::SecretKey::<RustCrypto>::generate().unwrap();
-        let key_bssl = crate::SecretKey::<BoringSsl>::from_bytes(&key_rc.to_bytes()).unwrap();
+        let seed = [9u8; crate::SEED_LENGTH];
+        let key_rc = crate::SecretKey::<RustCrypto>::from_seed(&seed).unwrap();
+        let key_bssl = crate::SecretKey::<BoringSsl>::from_seed(&seed).unwrap();
         let pk_bssl =
             crate::PublicKey::<BoringSsl>::from_bytes(&key_rc.public_key().to_bytes()).unwrap();
         // Client on BoringSSL, Moderator on RustCrypto.

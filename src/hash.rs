@@ -12,268 +12,45 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Hashing and derivation under the ACT protocol context: RFC 9380's
-//! `expand_message_xmd` over SHA-256, and the Rollatini group's
-//! `HashToScalar`, `DeriveScalars`, `ExpandScalars`, `DeriveNonces`, and
-//! `DeriveKeyPair`.
+//! ACT-specific hashing tags, scalar decoding, and error conversion.
 
-use alloc::vec::Vec;
-
+use ec_ihat::hash;
+use ec_ihat::hash::BackendHashExt;
 use subtle::CtOption;
-use zeroize::{Zeroize, Zeroizing};
+use zeroize::Zeroize;
 
 use crate::Error;
-use crate::backend::{Backend, SCALAR_LENGTH, Scalar, Sha256};
+use crate::backend::Backend;
+
+#[cfg(test)]
+pub(crate) use hash::XmdPrefix;
+
+pub(crate) const NSEED: usize = crate::SEED_LENGTH;
 
 /// Domain separation tag of `HashToGroup`.
 pub(crate) const DST_HASH_TO_GROUP: &[u8] = b"HashToGroup-ACTv1-P256-SHA256";
 /// Domain separation tag of `HashToScalar`.
 pub(crate) const DST_HASH_TO_SCALAR: &[u8] = b"HashToScalar-ACTv1-P256-SHA256";
-const DST_DERIVE_SCALARS: &[u8] = b"DeriveScalars-ACTv1-P256-SHA256";
-const DST_EXPAND_SCALARS: &[u8] = b"ExpandScalars-ACTv1-P256-SHA256";
-const DST_DERIVE_NONCES: &[u8] = b"DeriveNonces-ACTv1-P256-SHA256";
-const DST_DERIVE_KEY_PAIR: &[u8] = b"DeriveKeyPair-ACTv1-P256-SHA256";
 
-/// The seed length `Nseed`.
-pub(crate) const NSEED: usize = crate::SEED_LENGTH;
-
-/// Output length of the `expand_message_xmd` calls that produce scalars.
-const XMD_LENGTH: usize = 48;
-
-/// The input block size of SHA-256, `s_in_bytes` in RFC 9380.
-const S_IN_BYTES: usize = 64;
-
-/// Length of the keys of `ExpandScalars`, the hash output length `Nh`.
-const NH: usize = 32;
-
-/// `expand_message_xmd` with SHA-256 (RFC 9380, Section 5.3.1), with the
-/// message split into a prefix absorbed once and a suffix supplied per call.
-pub(crate) struct XmdPrefix<H: Sha256> {
-    hasher: H,
-}
-
-impl<H: Sha256> XmdPrefix<H> {
-    /// Absorbs `Z_pad || prefix`.
-    pub(crate) fn new(prefix: &[&[u8]]) -> Self {
-        let mut hasher = H::new();
-        hasher.update(&[0u8; 64]);
-        for part in prefix {
-            hasher.update(part);
-        }
-        Self { hasher }
-    }
-
-    /// `expand_message_xmd(prefix || suffix, dst, XMD_LENGTH)`.
-    pub(crate) fn expand(&self, suffix: &[&[u8]], dst: &[u8]) -> [u8; XMD_LENGTH] {
-        let mut out = [0u8; XMD_LENGTH];
-        self.expand_into(suffix, dst, &mut out);
-        out
-    }
-
-    /// `expand_message_xmd(prefix || suffix, dst, len(out))`.
-    ///
-    /// `dst` is at most 255 bytes and `out` at most `255 * 32` bytes; the
-    /// tags of this crate are short constants and every output is 32 or 48
-    /// bytes.
-    pub(crate) fn expand_into(&self, suffix: &[&[u8]], dst: &[u8], out: &mut [u8]) {
-        debug_assert!(dst.len() <= 255 && out.len() <= 255 * 32);
-        let dst_prime_tail = [dst.len() as u8];
-        let mut hasher = self.hasher.clone();
-        for part in suffix {
-            hasher.update(part);
-        }
-        hasher.update(&(out.len() as u16).to_be_bytes());
-        hasher.update(&[0]);
-        hasher.update(dst);
-        hasher.update(&dst_prime_tail);
-        let mut b0 = hasher.finalize();
-
-        let mut previous = [0u8; 32];
-        for (i, chunk) in out.chunks_mut(32).enumerate() {
-            // b_i = H(strxor(b_0, b_{i-1}) || I2OSP(i, 1) || DST_prime); for
-            // i = 1 the previous block is zero, so the xor leaves b_0.
-            let mut block = b0;
-            for (byte, prev) in block.iter_mut().zip(previous) {
-                *byte ^= prev;
-            }
-            let mut hasher = H::new();
-            hasher.update(&block);
-            block.zeroize();
-            hasher.update(&[i as u8 + 1]);
-            hasher.update(dst);
-            hasher.update(&dst_prime_tail);
-            previous = hasher.finalize();
-            chunk.copy_from_slice(&previous[..chunk.len()]);
-        }
-        b0.zeroize();
-        previous.zeroize();
-    }
-}
-
-/// A scalar from a 24-byte big-endian integer, which is below the order.
-fn scalar_from_u192<B: Backend>(bytes: &[u8]) -> B::Scalar {
-    let mut padded = [0u8; SCALAR_LENGTH];
-    padded[8..].copy_from_slice(bytes);
-    let scalar = B::Scalar::from_bytes(&padded).unwrap_or(B::Scalar::default());
-    padded.zeroize();
-    scalar
-}
-
-/// The scalar `2^192`.
-fn two_to_192<B: Backend>() -> B::Scalar {
-    let mut bytes = [0u8; SCALAR_LENGTH];
-    bytes[7] = 1;
-    B::Scalar::from_bytes(&bytes).unwrap_or(B::Scalar::default())
-}
-
-/// Reduces a 48-byte big-endian integer modulo the order, in constant time,
-/// as `hi * 2^192 + lo` over two canonical halves.
-pub(crate) fn reduce_be_48<B: Backend>(bytes: &[u8; XMD_LENGTH]) -> B::Scalar {
-    let (hi, lo) = bytes.split_at(24);
-    let mut hi = scalar_from_u192::<B>(hi);
-    let mut lo = scalar_from_u192::<B>(lo);
-    let scalar = hi * two_to_192::<B>() + lo;
-    hi.zeroize();
-    lo.zeroize();
-    scalar
-}
-
-/// Reduces a 48-byte little-endian integer modulo the order, as the
-/// Fiat-Shamir `DecodeUint` requires.
-pub(crate) fn reduce_le_48<B: Backend>(bytes: &[u8; XMD_LENGTH]) -> B::Scalar {
-    let mut reversed = [0u8; XMD_LENGTH];
-    for (dst, src) in reversed.iter_mut().zip(bytes.iter().rev()) {
-        *dst = *src;
-    }
-    let scalar = reduce_be_48::<B>(&reversed);
-    reversed.zeroize();
-    scalar
-}
-
-/// `G.HashToScalar(msg)` under `dst`.
-pub(crate) fn hash_to_scalar<B: Backend>(msg: &[&[u8]], dst: &[u8]) -> B::Scalar {
-    let mut uniform = XmdPrefix::<B::Sha256>::new(&[]).expand(msg, dst);
-    let scalar = reduce_be_48::<B>(&uniform);
-    uniform.zeroize();
-    scalar
-}
-
-/// `G.DeriveScalars(rand, info, count)`: `rand` and `info` hashed into a
-/// key, which `expand_scalars` expands into `count` scalars.
-pub(crate) fn derive_scalars<B: Backend>(
-    rand: &[u8],
-    info: &[u8],
-    count: usize,
-) -> Result<Zeroizing<Vec<B::Scalar>>, Error> {
-    if rand.len() != NSEED {
-        return Err(Error::InvalidInput);
-    }
-    let info_len = u16::try_from(info.len()).map_err(|_| Error::InvalidInput)?;
-    let mut key = Zeroizing::new([0u8; NH]);
-    XmdPrefix::<B::Sha256>::new(&[]).expand_into(
-        &[rand, &info_len.to_be_bytes(), info],
-        DST_DERIVE_SCALARS,
-        key.as_mut(),
-    );
-    expand_scalars::<B>(&key, count)
-}
-
-/// `G.DeriveNonces(secret, label, instance, rand, count)`: `rand`, the
-/// secret, and the operation hashed into a key, with `rand` and the secret
-/// each padded to whole blocks of the hash function, then expanded into
-/// `count` nonces. `instance` is supplied in parts and hashed as their
-/// concatenation.
-pub(crate) fn derive_nonces<B: Backend>(
-    secret: &[u8],
-    label: &[u8],
-    instance: &[&[u8]],
-    rand: &[u8],
-    count: usize,
-) -> Result<Zeroizing<Vec<B::Scalar>>, Error> {
-    if rand.len() != NSEED {
-        return Err(Error::InvalidInput);
-    }
-    let label_len = u16::try_from(label.len()).map_err(|_| Error::InvalidInput)?;
-    let secret_len = u32::try_from(secret.len()).map_err(|_| Error::InvalidInput)?;
-    let instance_len = instance.iter().map(|part| part.len()).sum::<usize>();
-    let instance_len = u32::try_from(instance_len).map_err(|_| Error::InvalidInput)?;
-    let (label_len, secret_len, instance_len) = (
-        label_len.to_be_bytes(),
-        secret_len.to_be_bytes(),
-        instance_len.to_be_bytes(),
-    );
-    let zeros = [0u8; S_IN_BYTES];
-    let rand_pad = &zeros[..pad_to_block(NSEED)];
-    let secret_pad = &zeros[..pad_to_block(secret_len.len() + secret.len())];
-    let mut parts: Vec<&[u8]> = alloc::vec![
-        rand,
-        rand_pad,
-        &secret_len,
-        secret,
-        secret_pad,
-        &label_len,
-        label,
-        &instance_len,
-    ];
-    parts.extend_from_slice(instance);
-    let mut key = Zeroizing::new([0u8; NH]);
-    XmdPrefix::<B::Sha256>::new(&[]).expand_into(&parts, DST_DERIVE_NONCES, key.as_mut());
-    expand_scalars::<B>(&key, count)
-}
-
-/// The number of zero bytes `PadToBlock` appends to a value of `len` bytes.
-fn pad_to_block(len: usize) -> usize {
-    (S_IN_BYTES - len % S_IN_BYTES) % S_IN_BYTES
-}
-
-/// `G.ExpandScalars(key, count)`: `HashToScalar(key || I2OSP(i, 4))` under
-/// the `ExpandScalars` tag, for each `i` below `count`.
-///
-/// Every scalar is computed before a zero one is reported, so the time taken
-/// does not depend on where it occurs.
-pub(crate) fn expand_scalars<B: Backend>(
-    key: &[u8; NH],
-    count: usize,
-) -> Result<Zeroizing<Vec<B::Scalar>>, Error> {
-    let count_bound = u32::try_from(count).map_err(|_| Error::InvalidInput)?;
-    let prefix = XmdPrefix::<B::Sha256>::new(&[key]);
-    let mut scalars = Zeroizing::new(Vec::with_capacity(count));
-    let mut result = Ok(());
-    for i in 0..count_bound {
-        let mut uniform = prefix.expand(&[&i.to_be_bytes()], DST_EXPAND_SCALARS);
-        let scalar = reduce_be_48::<B>(&uniform);
-        uniform.zeroize();
-        if bool::from(scalar.is_zero()) {
-            result = Err(Error::Derive);
-        }
-        scalars.push(scalar);
-    }
-    result.map(|()| scalars)
-}
-
-/// The secret scalar of `G.DeriveKeyPair(seed, info)`, as in RFC 9497,
-/// Section 3.2.1, under the ACT protocol context.
-///
-/// The counter loop exits on the first nonzero output, a branch taken with
-/// probability about `2^-256`; the draft specifies it.
-pub(crate) fn derive_key_scalar<B: Backend>(
-    seed: &[u8; NSEED],
-    info: &[u8],
-) -> Result<B::Scalar, Error> {
-    let info_len = u16::try_from(info.len()).map_err(|_| Error::InvalidInput)?;
-    let prefix = XmdPrefix::<B::Sha256>::new(&[seed, &info_len.to_be_bytes(), info]);
-    for counter in 0..=u8::MAX {
-        let mut uniform = prefix.expand(&[&[counter]], DST_DERIVE_KEY_PAIR);
-        let scalar = reduce_be_48::<B>(&uniform);
-        uniform.zeroize();
-        if !bool::from(scalar.is_zero()) {
-            return Ok(scalar);
+impl From<hash::Error> for Error {
+    fn from(error: hash::Error) -> Self {
+        match error {
+            hash::Error::InvalidInput => Self::InvalidInput,
+            hash::Error::Derive => Self::Derive,
         }
     }
-    Err(Error::Derive)
 }
 
 /// Checks that a `CtOption` holds a value, mapping absence to `error`.
-pub(crate) fn require<T>(value: CtOption<T>, error: Error) -> Result<T, Error> {
+pub(crate) fn require<T, E>(value: CtOption<T>, error: E) -> Result<T, E> {
     value.into_option().ok_or(error)
+}
+
+/// Fiat-Shamir's little-endian `DecodeUint` is specific to ACT.
+pub(crate) fn reduce_le_48<B: Backend>(bytes: &[u8; 48]) -> B::Scalar {
+    let mut reversed = *bytes;
+    reversed.reverse();
+    let scalar = B::reduce_be_48(&reversed);
+    reversed.zeroize();
+    scalar
 }

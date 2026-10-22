@@ -82,7 +82,11 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: taiki-e/install-action@cargo-machete
       - run: cargo machete
+      # Skip the source check while `ihat-rs` is consumed from Git. Re-enable
+      # it once both crates are published on crates.io.
       - uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          command: check advisories bans licenses
 
   boringssl:
     name: Test, lint (BoringSSL and both backends)

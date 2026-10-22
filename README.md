@@ -1,6 +1,6 @@
 # act-rs
 
-A Rust implementation of **Anonymous Credit Tokens (ACT)**, the MoLE
+A Rust implementation of **Anonymous Credit Tokens (ACT)**, the MOLE
 Credential scheme of
 [draft-authors-mole-act](https://moderation-of-unlinkable-endorsements.github.io/internet-drafts/draft-authors-mole-act.html),
 for the `P256-SHA256` ciphersuite.
@@ -19,12 +19,13 @@ draft-authors-mole-rollatini, and reproduces its test vectors byte for byte.
 ## Usage
 
 ```rust
-use act::{Params, SecretKey};
+use act::{Backend, DefaultBackend, Params, SecretKey};
 
 let params: Params = Params::new(8)?;       // balances below 2^8
 let ctx_cred = b"epoch-42";                 // agreed out of band
 
-let secret_key = SecretKey::generate()?;    // Moderator
+let secret_key_seed = DefaultBackend::generate_seed()?;
+let secret_key: SecretKey = SecretKey::from_seed(&secret_key_seed)?;
 let public_key = secret_key.public_key();   // published
 
 // Issuance
@@ -53,8 +54,8 @@ returned as `Zeroizing<Vec<u8>>` because they hold secrets.
 
 ## Backends
 
-All group and hash operations go through the [`Backend`](src/backend/mod.rs)
-trait, following the design of the ATHM crate that Chromium builds. Two
+Most cryptographic operations go through IHAT's `Backend` trait, re-exported
+by this crate, following the design of the ATHM crate that Chromium builds. Two
 implementations are provided, selected by Cargo feature:
 
 | Feature       | Curve, SHA-256, hash-to-curve, randomness | SHAKE128 |
@@ -68,10 +69,11 @@ both features enabled, the test suite checks that they interoperate and that
 `boringssl` is the `DefaultBackend`. Every type takes the backend as a type
 parameter that defaults to it.
 
+ACT uses SHAKE128 from the RustCrypto `shake` crate for both backends.
 BoringSSL implements Keccak but does not export it through a public header,
-so the `boringssl` backend takes SHAKE128 from the RustCrypto `shake` crate
-until it does. The seam is the `Backend::Shake128` associated type; see
-`src/backend/shake.rs`. The sponge only ever absorbs public data.
+so the `boringssl` configuration uses RustCrypto's implementation until
+BoringSSL exposes it through a public header and the `bssl-sys` bindings.
+The sponge only ever absorbs public data; see `src/sigma.rs` for its use.
 
 ### Building the BoringSSL backend
 

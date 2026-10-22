@@ -15,29 +15,25 @@ name = "act"
 [features]
 default = ["rustcrypto", "std"]
 # Pure-Rust backend on the RustCrypto `p256` stack.
-rustcrypto = ["dep:p256", "dep:sha2", "dep:shake", "dep:getrandom"]
+rustcrypto = ["ec-ihat/rustcrypto", "dep:p256"]
 # Standard library support; with `rustcrypto`, also enables the
 # precomputed generator tables of `p256`.
-std = ["p256?/std", "p256?/precomputed-tables", "getrandom?/std"]
+std = ["ec-ihat/std", "p256?/std", "p256?/precomputed-tables"]
 # Randomness from the JavaScript host on `wasm32-unknown-unknown`, for the
 # `rustcrypto` backend; other bare targets need a `getrandom` custom backend.
-wasm_js = ["getrandom?/wasm_js"]
+wasm_js = ["ec-ihat/wasm_js"]
 # BoringSSL backend over the `bssl-sys` FFI bindings. `bssl-sys` is not
 # published; patch it to a BoringSSL checkout (see README). SHAKE128 comes
-# from the `shake` crate until BoringSSL exports its Keccak (see
-# `backend::shake`).
-boringssl = ["dep:bssl-sys", "dep:shake"]
+# from the `shake` crate until BoringSSL exports its Keccak.
+boringssl = ["ec-ihat/boringssl"]
 
 [dependencies]
+ec-ihat = { package = "ihat-rs", version = "0.1.0", git = "https://github.com/Moderation-of-unLinkable-Endorsements/ihat-rs", rev = "3767cebd01936be5bfcfece75005c4524243cd08", default-features = false }
 subtle = { version = "2.6", default-features = false }
 zeroize = { version = "1.7", default-features = false, features = ["alloc"] }
 
 p256 = { version = "0.14", default-features = false, features = ["arithmetic", "hash2curve", "alloc"], optional = true }
-sha2 = { version = "0.11", default-features = false, features = ["zeroize"], optional = true }
-shake = { version = "0.1", default-features = false, features = ["zeroize"], optional = true }
-getrandom = { version = "0.4", optional = true }
-
-bssl-sys = { version = "0.1.0", optional = true }
+shake = { version = "0.1", default-features = false, features = ["zeroize"] }
 
 [dev-dependencies]
 hex = "0.4"

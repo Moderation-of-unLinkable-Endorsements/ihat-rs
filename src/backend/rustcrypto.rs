@@ -17,109 +17,11 @@
 use alloc::boxed::Box;
 use alloc::vec::Vec;
 use core::fmt;
-use core::sync::atomic::{Ordering, compiler_fence};
 
-use p256::elliptic_curve::group::GroupEncoding;
-use p256::elliptic_curve::ops::{Double, LinearCombination};
-use p256::elliptic_curve::{BatchNormalize, Field, Group, PrimeField};
-use p256::hash2curve::{ExpandMsgXmd, hash_from_bytes};
-use p256::{AffinePoint, CompressedPoint, FieldBytes, NistP256, ProjectivePoint};
-use sha2::Digest;
-use subtle::{Choice, ConditionallySelectable, ConstantTimeEq, CtOption};
-
-use super::{POINT_LENGTH, SCALAR_LENGTH};
-
-/// The RustCrypto backend.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct RustCrypto;
-
-impl super::Scalar for p256::Scalar {
-    fn invert(&self) -> CtOption<Self> {
-        Field::invert(self)
-    }
-
-    fn is_zero(&self) -> Choice {
-        Field::is_zero(self)
-    }
-
-    fn from_bytes(bytes: &[u8; SCALAR_LENGTH]) -> CtOption<Self> {
-        Self::from_repr(FieldBytes::from(*bytes))
-    }
-
-    fn to_bytes(&self) -> [u8; SCALAR_LENGTH] {
-        self.to_repr().into()
-    }
-}
-
-impl super::Point for ProjectivePoint {
-    type Scalar = p256::Scalar;
-
-    fn identity() -> Self {
-        Self::IDENTITY
-    }
-
-    fn generator() -> Self {
-        Self::GENERATOR
-    }
-
-    fn is_identity(&self) -> Choice {
-        Group::is_identity(self)
-    }
-
-    fn ct_eq(&self, other: &Self) -> Choice {
-        ConstantTimeEq::ct_eq(self, other)
-    }
-
-    fn add(&self, other: &Self) -> Self {
-        self + other
-    }
-
-    fn double(&self) -> Self {
-        Double::double(self)
-    }
-
-    fn mul(&self, scalar: &Self::Scalar) -> Self {
-        self * scalar
-    }
-
-    fn mul_generator(scalar: &Self::Scalar) -> Self {
-        <Self as Group>::mul_by_generator(scalar)
-    }
-
-    fn lincomb<const N: usize>(terms: [(&Self, &Self::Scalar); N]) -> Self {
-        let terms = terms.map(|(point, scalar)| (*point, *scalar));
-        <Self as LinearCombination<[(Self, Self::Scalar); N]>>::lincomb(&terms)
-    }
-
-    fn from_bytes(bytes: &[u8; POINT_LENGTH]) -> CtOption<Self> {
-        // Only compressed encodings are canonical. `GroupEncoding::from_bytes`
-        // also accepts the SEC1 compact tag 0x05, and maps the all-zero
-        // string to the identity, which the draft requires be rejected; the
-        // prefix check excludes both, and the identity is checked anyway.
-        if bytes[0] != 2 && bytes[0] != 3 {
-            return CtOption::new(Self::IDENTITY, Choice::from(0));
-        }
-        <Self as GroupEncoding>::from_bytes(&CompressedPoint::from(*bytes))
-            .and_then(|point| CtOption::new(point, !Group::is_identity(&point)))
-    }
-
-    fn to_bytes(&self) -> Option<[u8; POINT_LENGTH]> {
-        if bool::from(Group::is_identity(self)) {
-            return None;
-        }
-        Some(GroupEncoding::to_bytes(self).into())
-    }
-
-    #[allow(unsafe_code)]
-    fn zeroize(&mut self) {
-        // SAFETY: `self` is a valid, exclusively borrowed `ProjectivePoint`,
-        // which is `Copy` and has no drop glue, so overwriting it in place is
-        // sound. The volatile write keeps the overwrite from being elided as
-        // dead when the value is about to be dropped.
-        unsafe { core::ptr::write_volatile(self, Self::IDENTITY) };
-        compiler_fence(Ordering::SeqCst);
-    }
-}
+pub use ec_ihat::backend::rustcrypto::*;
+use p256::elliptic_curve::{BatchNormalize, PrimeField};
+use p256::{AffinePoint, ProjectivePoint};
+use subtle::{ConditionallySelectable, ConstantTimeEq};
 
 /// Bits per window of the fixed-base tables.
 const WINDOW_BITS: usize = 4;
@@ -191,36 +93,6 @@ impl super::FixedBase<ProjectivePoint> for FixedPoint {
     }
 }
 
-/// SHA-256 from the `sha2` crate.
-#[derive(Clone)]
-pub struct Sha256(sha2::Sha256);
-
-impl super::Sha256 for Sha256 {
-    fn new() -> Self {
-        Self(sha2::Sha256::new())
-    }
-
-    fn update(&mut self, data: &[u8]) {
-        Digest::update(&mut self.0, data);
-    }
-
-    fn finalize(self) -> [u8; 32] {
-        self.0.finalize().into()
-    }
-}
-
-impl super::Backend for RustCrypto {
-    type Scalar = p256::Scalar;
-    type Point = ProjectivePoint;
+impl super::BackendFixedBaseExt for RustCrypto {
     type FixedBase = FixedPoint;
-    type Sha256 = Sha256;
-    type Shake128 = super::shake::RustCryptoShake128;
-
-    fn hash_to_curve(msg: &[&[u8]], dst: &[&[u8]]) -> Option<Self::Point> {
-        hash_from_bytes::<NistP256, ExpandMsgXmd<sha2::Sha256>>(msg, dst).ok()
-    }
-
-    fn random_bytes(buf: &mut [u8]) -> Result<(), crate::Error> {
-        getrandom::fill(buf).map_err(|_| crate::Error::Entropy)
-    }
 }
