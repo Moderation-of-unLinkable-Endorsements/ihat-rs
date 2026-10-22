@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! The BoringSSL backend over the `bssl-sys` FFI bindings.
+//! The BoringSSL backend through the `boring` crate.
 //!
 //! Scalars are 32-byte big-endian integers below the order and use
 //! BoringSSL's constant-time bignum routines: `BN_mod_add_quick`,
@@ -24,14 +24,20 @@
 //! uses the same constant-time bignum routines modulo the field prime.
 //! Hash-to-curve, SHA-256, and randomness are BoringSSL's as well.
 //!
-//! Every FFI call carries a `SAFETY` comment. Allocation failure is treated
+//! Constant-time bignum operations and hash-to-curve which are not exposed by
+//! `boring` use its companion `boring-sys` bindings directly, as do fixed-size
+//! serialization calls where the safe API requires a temporary allocation.
+//! Every such call carries a `SAFETY` comment. Allocation failure is treated
 //! as fatal, as in `bssl-crypto`.
 
 use core::ffi::c_void;
 use core::fmt;
-use core::ptr::{NonNull, null, null_mut};
+use core::ptr::null_mut;
 use core::sync::atomic::{AtomicPtr, Ordering};
 
+use boring::bn::{BigNum, BigNumContext};
+use boring::ec::{EcGroupRef, EcPoint};
+use foreign_types::{ForeignType, ForeignTypeRef};
 use subtle::{Choice, ConditionallySelectable, ConstantTimeEq, CtOption};
 use zeroize::Zeroize;
 
@@ -45,44 +51,45 @@ pub struct BoringSsl;
 // Group constants
 // ---------------------------------------------------------------------------
 
-fn group() -> *const bssl_sys::EC_GROUP {
-    // SAFETY: returns a static group; no resources to release.
-    let group = unsafe { bssl_sys::EC_group_p256() };
-    assert!(!group.is_null());
-    group
+fn group() -> &'static EcGroupRef {
+    // SAFETY: BoringSSL documents `EC_group_p256` as returning a static group.
+    // `EcGroupRef` borrows the pointer and therefore does not free it.
+    unsafe {
+        let group = boring_sys::EC_group_p256();
+        assert!(!group.is_null());
+        EcGroupRef::from_ptr(group.cast_mut())
+    }
 }
 
-fn order() -> *const bssl_sys::BIGNUM {
-    // SAFETY: `group()` is valid; the order is owned by the static group.
-    let order = unsafe { bssl_sys::EC_GROUP_get0_order(group()) };
-    assert!(!order.is_null());
-    order
+fn order() -> Bignum {
+    Bignum::from_bytes(&ORDER)
 }
 
 /// The Montgomery context for the group order, created once per process.
-fn order_mont() -> *const bssl_sys::BN_MONT_CTX {
-    static MONT: AtomicPtr<bssl_sys::BN_MONT_CTX> = AtomicPtr::new(null_mut());
+fn order_mont() -> *const boring_sys::BN_MONT_CTX {
+    static MONT: AtomicPtr<boring_sys::BN_MONT_CTX> = AtomicPtr::new(null_mut());
     let existing = MONT.load(Ordering::Acquire);
     if !existing.is_null() {
         return existing;
     }
-    // SAFETY: `order()` is a valid public modulus; a null `BN_CTX` makes
+    let order = order();
+    // SAFETY: `order` is a valid public modulus; a null `BN_CTX` makes
     // BoringSSL allocate one internally.
-    let fresh = unsafe { bssl_sys::BN_MONT_CTX_new_for_modulus(order(), null_mut()) };
+    let fresh = unsafe { boring_sys::BN_MONT_CTX_new_for_modulus(order.as_ptr(), null_mut()) };
     assert!(!fresh.is_null());
     match MONT.compare_exchange(null_mut(), fresh, Ordering::AcqRel, Ordering::Acquire) {
         Ok(_) => fresh,
         Err(winner) => {
             // SAFETY: `fresh` was allocated above and never published.
-            unsafe { bssl_sys::BN_MONT_CTX_free(fresh) };
+            unsafe { boring_sys::BN_MONT_CTX_free(fresh) };
             winner
         }
     }
 }
 
 /// The Montgomery context for the field modulus, created once per process.
-fn field_mont() -> *const bssl_sys::BN_MONT_CTX {
-    static MONT: AtomicPtr<bssl_sys::BN_MONT_CTX> = AtomicPtr::new(null_mut());
+fn field_mont() -> *const boring_sys::BN_MONT_CTX {
+    static MONT: AtomicPtr<boring_sys::BN_MONT_CTX> = AtomicPtr::new(null_mut());
     let existing = MONT.load(Ordering::Acquire);
     if !existing.is_null() {
         return existing;
@@ -90,13 +97,13 @@ fn field_mont() -> *const bssl_sys::BN_MONT_CTX {
     let modulus = Bignum::from_bytes(&FIELD_MODULUS);
     // SAFETY: `modulus` is a valid public odd modulus; a null `BN_CTX` makes
     // BoringSSL allocate one internally.
-    let fresh = unsafe { bssl_sys::BN_MONT_CTX_new_for_modulus(modulus.as_ptr(), null_mut()) };
+    let fresh = unsafe { boring_sys::BN_MONT_CTX_new_for_modulus(modulus.as_ptr(), null_mut()) };
     assert!(!fresh.is_null());
     match MONT.compare_exchange(null_mut(), fresh, Ordering::AcqRel, Ordering::Acquire) {
         Ok(_) => fresh,
         Err(winner) => {
             // SAFETY: `fresh` was allocated above and never published.
-            unsafe { bssl_sys::BN_MONT_CTX_free(fresh) };
+            unsafe { boring_sys::BN_MONT_CTX_free(fresh) };
             winner
         }
     }
@@ -106,67 +113,48 @@ fn field_mont() -> *const bssl_sys::BN_MONT_CTX {
 // RAII wrappers
 // ---------------------------------------------------------------------------
 
-struct Bignum(NonNull<bssl_sys::BIGNUM>);
+struct Bignum(BigNum);
 
 impl Bignum {
     fn new() -> Self {
-        // SAFETY: `BN_new` has no preconditions.
-        let ptr = unsafe { bssl_sys::BN_new() };
-        Self(NonNull::new(ptr).unwrap_or_else(|| alloc_failed()))
+        Self(BigNum::new().unwrap_or_else(|_| alloc_failed()))
     }
 
     /// A bignum from big-endian bytes; the width is fixed by the length.
     fn from_bytes(bytes: &[u8]) -> Self {
-        let bn = Self::new();
-        // SAFETY: `bytes` is a valid buffer of its length; `bn` is valid.
-        let ret = unsafe { bssl_sys::BN_bin2bn(bytes.as_ptr(), bytes.len(), bn.as_mut_ptr()) };
-        assert!(!ret.is_null());
-        bn
+        Self(BigNum::from_slice(bytes).unwrap_or_else(|_| alloc_failed()))
     }
 
     /// The value as `SCALAR_LENGTH` big-endian bytes; the value must fit.
     fn to_bytes(&self) -> [u8; SCALAR_LENGTH] {
         let mut out = [0u8; SCALAR_LENGTH];
-        // SAFETY: `out` has `SCALAR_LENGTH` bytes; `self` is valid.
-        let ret = unsafe { bssl_sys::BN_bn2bin_padded(out.as_mut_ptr(), out.len(), self.as_ptr()) };
+        // `boring::bn::BigNumRef::to_vec_padded` allocates a temporary `Vec`;
+        // write into the fixed-size output directly instead.
+        // SAFETY: `out` has `SCALAR_LENGTH` bytes and `self` is valid.
+        let ret =
+            unsafe { boring_sys::BN_bn2bin_padded(out.as_mut_ptr(), out.len(), self.as_ptr()) };
         assert_eq!(ret, 1);
         out
     }
 
-    fn as_ptr(&self) -> *const bssl_sys::BIGNUM {
+    fn as_ptr(&self) -> *const boring_sys::BIGNUM {
         self.0.as_ptr()
     }
 
-    fn as_mut_ptr(&self) -> *mut bssl_sys::BIGNUM {
+    fn as_mut_ptr(&self) -> *mut boring_sys::BIGNUM {
         self.0.as_ptr()
     }
 }
 
-impl Drop for Bignum {
-    fn drop(&mut self) {
-        // SAFETY: allocated by `BN_new`; BoringSSL cleanses before freeing.
-        unsafe { bssl_sys::BN_free(self.0.as_ptr()) };
-    }
-}
-
-struct BnCtx(NonNull<bssl_sys::BN_CTX>);
+struct BnCtx(BigNumContext);
 
 impl BnCtx {
     fn new() -> Self {
-        // SAFETY: `BN_CTX_new` has no preconditions.
-        let ptr = unsafe { bssl_sys::BN_CTX_new() };
-        Self(NonNull::new(ptr).unwrap_or_else(|| alloc_failed()))
+        Self(BigNumContext::new().unwrap_or_else(|_| alloc_failed()))
     }
 
-    fn as_mut_ptr(&self) -> *mut bssl_sys::BN_CTX {
+    fn as_mut_ptr(&self) -> *mut boring_sys::BN_CTX {
         self.0.as_ptr()
-    }
-}
-
-impl Drop for BnCtx {
-    fn drop(&mut self) {
-        // SAFETY: allocated by `BN_CTX_new`.
-        unsafe { bssl_sys::BN_CTX_free(self.0.as_ptr()) };
     }
 }
 
@@ -175,6 +163,13 @@ impl Drop for BnCtx {
 #[allow(clippy::panic)]
 fn alloc_failed() -> ! {
     panic!("BoringSSL allocation failed")
+}
+
+/// Operations on values already validated by this backend cannot fail.
+#[cold]
+#[allow(clippy::panic)]
+fn operation_failed() -> ! {
+    panic!("BoringSSL operation failed")
 }
 
 // ---------------------------------------------------------------------------
@@ -199,18 +194,19 @@ impl Scalar {
         &self,
         other: &Self,
         op: unsafe extern "C" fn(
-            *mut bssl_sys::BIGNUM,
-            *const bssl_sys::BIGNUM,
-            *const bssl_sys::BIGNUM,
-            *const bssl_sys::BIGNUM,
+            *mut boring_sys::BIGNUM,
+            *const boring_sys::BIGNUM,
+            *const boring_sys::BIGNUM,
+            *const boring_sys::BIGNUM,
         ) -> i32,
     ) -> Self {
         let a = Bignum::from_bytes(&self.0);
         let b = Bignum::from_bytes(&other.0);
         let r = Bignum::new();
+        let order = order();
         // SAFETY: all pointers are valid and both operands are canonical,
         // as the `_quick` functions require.
-        let ret = unsafe { op(r.as_mut_ptr(), a.as_ptr(), b.as_ptr(), order()) };
+        let ret = unsafe { op(r.as_mut_ptr(), a.as_ptr(), b.as_ptr(), order.as_ptr()) };
         assert_eq!(ret, 1);
         Self(r.to_bytes())
     }
@@ -272,7 +268,7 @@ impl core::ops::Add for Scalar {
     type Output = Self;
 
     fn add(self, other: Self) -> Self {
-        self.mod_op(&other, bssl_sys::BN_mod_add_quick)
+        self.mod_op(&other, boring_sys::BN_mod_add_quick)
     }
 }
 
@@ -280,7 +276,7 @@ impl core::ops::Sub for Scalar {
     type Output = Self;
 
     fn sub(self, other: Self) -> Self {
-        self.mod_op(&other, bssl_sys::BN_mod_sub_quick)
+        self.mod_op(&other, boring_sys::BN_mod_sub_quick)
     }
 }
 
@@ -306,12 +302,12 @@ impl core::ops::Mul for Scalar {
         // SAFETY: all pointers are valid; `a` is canonical as
         // `BN_to_montgomery` requires.
         let ret = unsafe {
-            bssl_sys::BN_to_montgomery(a_mont.as_mut_ptr(), a.as_ptr(), mont, ctx.as_mut_ptr())
+            boring_sys::BN_to_montgomery(a_mont.as_mut_ptr(), a.as_ptr(), mont, ctx.as_mut_ptr())
         };
         assert_eq!(ret, 1);
         // SAFETY: all pointers are valid; both operands are below the order.
         let ret = unsafe {
-            bssl_sys::BN_mod_mul_montgomery(
+            boring_sys::BN_mod_mul_montgomery(
                 r.as_mut_ptr(),
                 a_mont.as_ptr(),
                 b.as_ptr(),
@@ -335,11 +331,11 @@ impl super::Scalar for Scalar {
         // SAFETY: all pointers are valid and `base` is canonical, as
         // `BN_mod_exp_mont_consttime` requires.
         let ret = unsafe {
-            bssl_sys::BN_mod_exp_mont_consttime(
+            boring_sys::BN_mod_exp_mont_consttime(
                 r.as_mut_ptr(),
                 base.as_ptr(),
                 exponent.as_ptr(),
-                order(),
+                order().as_ptr(),
                 ctx.as_mut_ptr(),
                 order_mont(),
             )
@@ -373,7 +369,7 @@ const SQRT_EXPONENT: [u8; SCALAR_LENGTH] = [
 struct FieldArithmetic {
     modulus: Bignum,
     ctx: BnCtx,
-    mont: *const bssl_sys::BN_MONT_CTX,
+    mont: *const boring_sys::BN_MONT_CTX,
 }
 
 impl FieldArithmetic {
@@ -392,7 +388,7 @@ impl FieldArithmetic {
         // SAFETY: all pointers are valid; `a` is reduced, as
         // `BN_to_montgomery` requires.
         let ret = unsafe {
-            bssl_sys::BN_to_montgomery(
+            boring_sys::BN_to_montgomery(
                 a_mont.as_mut_ptr(),
                 a.as_ptr(),
                 self.mont,
@@ -402,7 +398,7 @@ impl FieldArithmetic {
         assert_eq!(ret, 1);
         // SAFETY: all pointers are valid; both operands are reduced.
         let ret = unsafe {
-            bssl_sys::BN_mod_mul_montgomery(
+            boring_sys::BN_mod_mul_montgomery(
                 r.as_mut_ptr(),
                 a_mont.as_ptr(),
                 b.as_ptr(),
@@ -420,10 +416,10 @@ impl FieldArithmetic {
         a: &Bignum,
         b: &Bignum,
         op: unsafe extern "C" fn(
-            *mut bssl_sys::BIGNUM,
-            *const bssl_sys::BIGNUM,
-            *const bssl_sys::BIGNUM,
-            *const bssl_sys::BIGNUM,
+            *mut boring_sys::BIGNUM,
+            *const boring_sys::BIGNUM,
+            *const boring_sys::BIGNUM,
+            *const boring_sys::BIGNUM,
         ) -> i32,
     ) -> Bignum {
         let r = Bignum::new();
@@ -448,7 +444,7 @@ impl FieldArithmetic {
         // SAFETY: all pointers are valid and `base` is reduced, as
         // `BN_mod_exp_mont_consttime` requires.
         let ret = unsafe {
-            bssl_sys::BN_mod_exp_mont_consttime(
+            boring_sys::BN_mod_exp_mont_consttime(
                 r.as_mut_ptr(),
                 base.as_ptr(),
                 exponent.as_ptr(),
@@ -475,43 +471,25 @@ fn order_minus_two() -> [u8; SCALAR_LENGTH] {
 // ---------------------------------------------------------------------------
 
 /// A P-256 point as an owned `EC_POINT`.
-pub struct Point(NonNull<bssl_sys::EC_POINT>);
-
-// SAFETY: an `EC_POINT` may be read concurrently; it is mutated only while
-// exclusively borrowed.
-unsafe impl Send for Point {}
-// SAFETY: as above.
-unsafe impl Sync for Point {}
+pub struct Point(EcPoint);
 
 impl Point {
     fn new() -> Self {
-        // SAFETY: `group()` is valid.
-        let ptr = unsafe { bssl_sys::EC_POINT_new(group()) };
-        Self(NonNull::new(ptr).unwrap_or_else(|| alloc_failed()))
+        Self(EcPoint::new(group()).unwrap_or_else(|_| alloc_failed()))
     }
 
-    fn as_ptr(&self) -> *const bssl_sys::EC_POINT {
+    fn as_ptr(&self) -> *const boring_sys::EC_POINT {
         self.0.as_ptr()
     }
 
-    fn as_mut_ptr(&mut self) -> *mut bssl_sys::EC_POINT {
+    fn as_mut_ptr(&mut self) -> *mut boring_sys::EC_POINT {
         self.0.as_ptr()
-    }
-}
-
-impl Drop for Point {
-    fn drop(&mut self) {
-        // SAFETY: allocated by `EC_POINT_new` or `EC_POINT_dup`; BoringSSL
-        // cleanses before freeing.
-        unsafe { bssl_sys::EC_POINT_free(self.0.as_ptr()) };
     }
 }
 
 impl Clone for Point {
     fn clone(&self) -> Self {
-        // SAFETY: `self` and `group()` are valid.
-        let ptr = unsafe { bssl_sys::EC_POINT_dup(self.as_ptr(), group()) };
-        Self(NonNull::new(ptr).unwrap_or_else(|| alloc_failed()))
+        Self(self.0.to_owned(group()).unwrap_or_else(|_| alloc_failed()))
     }
 }
 
@@ -537,127 +515,101 @@ impl super::Point for Point {
 
     fn identity() -> Self {
         let mut point = Self::new();
-        // SAFETY: `group()` and `point` are valid.
-        let ret = unsafe { bssl_sys::EC_POINT_set_to_infinity(group(), point.as_mut_ptr()) };
+        let group = group();
+        // SAFETY: `group` and `point` are valid.
+        let ret =
+            unsafe { boring_sys::EC_POINT_set_to_infinity(group.as_ptr(), point.as_mut_ptr()) };
         assert_eq!(ret, 1);
         point
     }
 
     fn generator() -> Self {
-        // SAFETY: `group()` is valid; the generator is owned by the group.
-        let generator = unsafe { bssl_sys::EC_GROUP_get0_generator(group()) };
-        assert!(!generator.is_null());
-        // SAFETY: `generator` and `group()` are valid.
-        let ptr = unsafe { bssl_sys::EC_POINT_dup(generator, group()) };
-        Self(NonNull::new(ptr).unwrap_or_else(|| alloc_failed()))
+        let group = group();
+        Self(
+            group
+                .generator()
+                .to_owned(group)
+                .unwrap_or_else(|_| alloc_failed()),
+        )
     }
 
     fn is_identity(&self) -> Choice {
-        // SAFETY: `group()` and `self` are valid.
-        let ret = unsafe { bssl_sys::EC_POINT_is_at_infinity(group(), self.as_ptr()) };
+        let group = group();
+        // SAFETY: `group` and `self` are valid.
+        let ret = unsafe { boring_sys::EC_POINT_is_at_infinity(group.as_ptr(), self.as_ptr()) };
         Choice::from((ret == 1) as u8)
     }
 
     fn ct_eq(&self, other: &Self) -> Choice {
         // `EC_POINT_cmp` compares in constant time.
-        // SAFETY: all pointers are valid; `ctx` may be null.
-        let ret =
-            unsafe { bssl_sys::EC_POINT_cmp(group(), self.as_ptr(), other.as_ptr(), null_mut()) };
-        assert!(ret >= 0);
-        Choice::from((ret == 0) as u8)
+        let group = group();
+        let mut ctx = BigNumContext::new().unwrap_or_else(|_| alloc_failed());
+        Choice::from(
+            self.0
+                .eq(group, &other.0, &mut ctx)
+                .unwrap_or_else(|_| operation_failed()) as u8,
+        )
     }
 
     fn add(&self, other: &Self) -> Self {
         let mut r = Self::new();
-        // SAFETY: all pointers are valid; `ctx` may be null.
-        let ret = unsafe {
-            bssl_sys::EC_POINT_add(
-                group(),
-                r.as_mut_ptr(),
-                self.as_ptr(),
-                other.as_ptr(),
-                null_mut(),
-            )
-        };
-        assert_eq!(ret, 1);
+        let group = group();
+        let mut ctx = BigNumContext::new().unwrap_or_else(|_| alloc_failed());
+        r.0.add(group, &self.0, &other.0, &mut ctx)
+            .unwrap_or_else(|_| operation_failed());
         r
     }
 
     fn double(&self) -> Self {
         let mut r = Self::new();
+        let group = group();
         // SAFETY: all pointers are valid; `ctx` may be null.
-        let ret =
-            unsafe { bssl_sys::EC_POINT_dbl(group(), r.as_mut_ptr(), self.as_ptr(), null_mut()) };
+        let ret = unsafe {
+            boring_sys::EC_POINT_dbl(group.as_ptr(), r.as_mut_ptr(), self.as_ptr(), null_mut())
+        };
         assert_eq!(ret, 1);
         r
     }
 
     fn neg(&self) -> Self {
         let mut r = self.clone();
-        // SAFETY: `group()` and `r` are valid; `ctx` may be null.
-        let ret = unsafe { bssl_sys::EC_POINT_invert(group(), r.as_mut_ptr(), null_mut()) };
-        assert_eq!(ret, 1);
+        let group = group();
+        let ctx = BigNumContext::new().unwrap_or_else(|_| alloc_failed());
+        r.0.invert(group, &ctx)
+            .unwrap_or_else(|_| operation_failed());
         r
     }
 
     fn mul(&self, scalar: &Self::Scalar) -> Self {
         let mut r = Self::new();
         let scalar = Bignum::from_bytes(&scalar.0);
-        // SAFETY: all pointers are valid; the scalar is canonical, as
-        // `EC_POINT_mul` requires; `ctx` may be null.
-        let ret = unsafe {
-            bssl_sys::EC_POINT_mul(
-                group(),
-                r.as_mut_ptr(),
-                null(),
-                self.as_ptr(),
-                scalar.as_ptr(),
-                null_mut(),
-            )
-        };
-        assert_eq!(ret, 1);
+        let group = group();
+        let mut ctx = BigNumContext::new().unwrap_or_else(|_| alloc_failed());
+        r.0.mul(group, &self.0, &scalar.0, &mut ctx)
+            .unwrap_or_else(|_| operation_failed());
         r
     }
 
     fn mul_generator(scalar: &Self::Scalar) -> Self {
         let mut r = Self::new();
         let scalar = Bignum::from_bytes(&scalar.0);
-        // SAFETY: as in `mul`; a null point selects the generator, for
-        // which BoringSSL uses a precomputed table.
-        let ret = unsafe {
-            bssl_sys::EC_POINT_mul(
-                group(),
-                r.as_mut_ptr(),
-                scalar.as_ptr(),
-                null(),
-                null(),
-                null_mut(),
-            )
-        };
-        assert_eq!(ret, 1);
+        let group = group();
+        let mut ctx = BigNumContext::new().unwrap_or_else(|_| alloc_failed());
+        r.0.mul_generator(group, &scalar.0, &mut ctx)
+            .unwrap_or_else(|_| operation_failed());
         r
     }
 
     fn from_bytes(bytes: &[u8; POINT_LENGTH]) -> CtOption<Self> {
-        let mut point = Self::new();
-        // SAFETY: all pointers are valid; `bytes` has `POINT_LENGTH` bytes.
-        let ret = unsafe {
-            bssl_sys::EC_POINT_oct2point(
-                group(),
-                point.as_mut_ptr(),
-                bytes.as_ptr(),
-                bytes.len(),
-                null_mut(),
-            )
-        };
-        if ret != 1 {
-            // SAFETY: clears the error queue that a failed parse leaves.
-            unsafe { bssl_sys::ERR_clear_error() };
-        }
+        let group = group();
+        let mut ctx = BigNumContext::new().unwrap_or_else(|_| alloc_failed());
+        let parsed = EcPoint::from_bytes(group, bytes, &mut ctx);
+        let valid_parse = parsed.is_ok();
+        let point = Self(parsed.unwrap_or_else(|_| Self::identity().0));
         // Only compressed encodings are canonical, and the identity has
         // none of this length; BoringSSL rejects both, checked here anyway.
         let compressed = bytes[0] == 2 || bytes[0] == 3;
-        let valid = ret == 1 && compressed && !bool::from(super::Point::is_identity(&point));
+        let valid = valid_parse && compressed && !bool::from(super::Point::is_identity(&point));
         CtOption::new(point, Choice::from(valid as u8))
     }
 
@@ -665,13 +617,16 @@ impl super::Point for Point {
         if bool::from(super::Point::is_identity(self)) {
             return None;
         }
+        let group = group();
         let mut out = [0u8; POINT_LENGTH];
+        // `boring::ec::EcPointRef::to_bytes` allocates a temporary `Vec`;
+        // write into the fixed-size output directly instead.
         // SAFETY: all pointers are valid; `out` has `POINT_LENGTH` bytes.
         let written = unsafe {
-            bssl_sys::EC_POINT_point2oct(
-                group(),
+            boring_sys::EC_POINT_point2oct(
+                group.as_ptr(),
                 self.as_ptr(),
-                bssl_sys::point_conversion_form_t::POINT_CONVERSION_COMPRESSED,
+                boring_sys::point_conversion_form_t::POINT_CONVERSION_COMPRESSED,
                 out.as_mut_ptr(),
                 out.len(),
                 null_mut(),
@@ -696,13 +651,13 @@ impl super::Point for Point {
         // rhs = x^3 - 3 * x + b.
         let x2 = field.mul(&x, &x);
         let x3 = field.mul(&x, &x2);
-        let two_x = field.quick(&x, &x, bssl_sys::BN_mod_add_quick);
-        let three_x = field.quick(&two_x, &x, bssl_sys::BN_mod_add_quick);
-        let rhs = field.quick(&x3, &three_x, bssl_sys::BN_mod_sub_quick);
+        let two_x = field.quick(&x, &x, boring_sys::BN_mod_add_quick);
+        let three_x = field.quick(&two_x, &x, boring_sys::BN_mod_add_quick);
+        let rhs = field.quick(&x3, &three_x, boring_sys::BN_mod_sub_quick);
         let rhs = field.quick(
             &rhs,
             &Bignum::from_bytes(&CURVE_B),
-            bssl_sys::BN_mod_add_quick,
+            boring_sys::BN_mod_add_quick,
         );
 
         // The modulus is 3 mod 4, so y = rhs^((p + 1) / 4) is a square root
@@ -725,15 +680,15 @@ impl super::Point for Point {
 /// SHA-256 from BoringSSL. The context is cleansed on drop, since a
 /// midstate can be derived from secrets.
 #[derive(Clone)]
-pub struct Sha256(bssl_sys::SHA256_CTX);
+pub struct Sha256(boring_sys::SHA256_CTX);
 
 impl Drop for Sha256 {
     fn drop(&mut self) {
         // SAFETY: `self.0` is a valid, initialized context of its own size.
         unsafe {
-            bssl_sys::OPENSSL_cleanse(
+            boring_sys::OPENSSL_cleanse(
                 (&raw mut self.0).cast::<c_void>(),
-                core::mem::size_of::<bssl_sys::SHA256_CTX>(),
+                core::mem::size_of::<boring_sys::SHA256_CTX>(),
             )
         };
     }
@@ -741,9 +696,9 @@ impl Drop for Sha256 {
 
 impl super::Sha256 for Sha256 {
     fn new() -> Self {
-        let mut ctx = core::mem::MaybeUninit::<bssl_sys::SHA256_CTX>::uninit();
+        let mut ctx = core::mem::MaybeUninit::<boring_sys::SHA256_CTX>::uninit();
         // SAFETY: `SHA256_Init` fully initializes `ctx` and returns 1.
-        let ret = unsafe { bssl_sys::SHA256_Init(ctx.as_mut_ptr()) };
+        let ret = unsafe { boring_sys::SHA256_Init(ctx.as_mut_ptr()) };
         assert_eq!(ret, 1);
         // SAFETY: initialized above.
         Self(unsafe { ctx.assume_init() })
@@ -752,7 +707,7 @@ impl super::Sha256 for Sha256 {
     fn update(&mut self, data: &[u8]) {
         // SAFETY: `self.0` is initialized; `data` is a valid slice.
         let ret = unsafe {
-            bssl_sys::SHA256_Update(&mut self.0, data.as_ptr().cast::<c_void>(), data.len())
+            boring_sys::SHA256_Update(&mut self.0, data.as_ptr().cast::<c_void>(), data.len())
         };
         assert_eq!(ret, 1);
     }
@@ -762,7 +717,7 @@ impl super::Sha256 for Sha256 {
         // SAFETY: `out` has `SHA256_DIGEST_LENGTH` bytes; `self.0` is
         // initialized. `SHA256_Final` clears the context it consumes, and
         // `Drop` cleanses it again.
-        let ret = unsafe { bssl_sys::SHA256_Final(out.as_mut_ptr(), &mut self.0) };
+        let ret = unsafe { boring_sys::SHA256_Final(out.as_mut_ptr(), &mut self.0) };
         assert_eq!(ret, 1);
         out
     }
@@ -777,10 +732,11 @@ impl super::Backend for BoringSsl {
         let msg: alloc::vec::Vec<u8> = msg.concat();
         let dst: alloc::vec::Vec<u8> = dst.concat();
         let mut point = Point::new();
+        let group = group();
         // SAFETY: all pointers are valid; the slices carry their lengths.
         let ret = unsafe {
-            bssl_sys::EC_hash_to_curve_p256_xmd_sha256_sswu(
-                group(),
+            boring_sys::EC_hash_to_curve_p256_xmd_sha256_sswu(
+                group.as_ptr(),
                 point.as_mut_ptr(),
                 dst.as_ptr(),
                 dst.len(),
@@ -790,7 +746,7 @@ impl super::Backend for BoringSsl {
         };
         if ret != 1 {
             // SAFETY: clears the error the failed call queued.
-            unsafe { bssl_sys::ERR_clear_error() };
+            unsafe { boring_sys::ERR_clear_error() };
             return None;
         }
         Some(point)
@@ -800,10 +756,7 @@ impl super::Backend for BoringSsl {
         if buf.is_empty() {
             return;
         }
-        // SAFETY: `buf` is a valid buffer of its length. `RAND_bytes` returns
-        // 1 or aborts the process.
-        let ret = unsafe { bssl_sys::RAND_bytes(buf.as_mut_ptr(), buf.len()) };
-        assert_eq!(ret, 1);
+        boring::rand::rand_bytes(buf).unwrap_or_else(|_| operation_failed());
     }
 }
 

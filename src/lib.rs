@@ -53,7 +53,7 @@
 //!
 //! Group and hash operations come from a [`Backend`], selected with Cargo
 //! features: `rustcrypto` (default, pure Rust) or `boringssl` (BoringSSL
-//! through `bssl-sys`, as used by Chromium). When both are enabled,
+//! through the `boring` crate). When both are enabled,
 //! `boringssl` is the [`DefaultBackend`]; every type takes the backend as a
 //! type parameter that defaults to it.
 //!

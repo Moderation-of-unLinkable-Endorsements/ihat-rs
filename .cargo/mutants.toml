@@ -15,8 +15,8 @@
 # Configuration for `cargo mutants`. CI mutates the lines each change touches,
 # and the Deep checks workflow mutates whole modules on demand.
 
-# The BoringSSL backend builds only with the `boringssl` feature, which needs
-# a BoringSSL checkout, so the default build never compiles its mutants.
+# The BoringSSL backend builds only with the `boringssl` feature, so the
+# default build never compiles its mutants.
 exclude_globs = ["src/backend/boringssl.rs"]
 
 # Mutants that no test can kill. Patterns name the mutated operator, and a

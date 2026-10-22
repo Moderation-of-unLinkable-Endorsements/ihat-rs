@@ -75,7 +75,7 @@ Tokens. Two implementations are provided, selected by Cargo feature:
 | Feature                | Curve, SHA-256, hash-to-curve, randomness |
 |------------------------|-------------------------------------------|
 | `rustcrypto` (default) | `p256`, `sha2`, `getrandom`               |
-| `boringssl`            | BoringSSL through `bssl-sys`              |
+| `boringssl`            | BoringSSL through `boring`                 |
 
 Both backends encode scalars as 32-byte big-endian integers and points as
 compressed SEC1, reject the identity, and produce identical outputs; with
@@ -88,30 +88,6 @@ is the x-coordinate of a point. The `rustcrypto` backend runs `p256`'s
 constant-time decompression; the `boringssl` backend computes
 `(x^3 - 3x + b)^((p+1)/4)` with BoringSSL's constant-time Montgomery
 arithmetic and compares its square.
-
-### Building the BoringSSL backend
-
-`bssl-sys` is not published on crates.io (the registry entry is a
-placeholder), so it must be patched to a BoringSSL checkout built with Rust
-bindings for the host. `scripts/build-boringssl.sh` does that at the commit
-this crate is tested against (`5112448a`, September 2026, the same as
-act-rs) and writes a Cargo config with the patch:
-
-```sh
-cargo install bindgen-cli          # plus git, cmake, ninja, and clang
-scripts/build-boringssl.sh         # clones and builds into ./boringssl
-
-export BORINGSSL_BUILD_DIR=$PWD/boringssl/build
-cargo test --features boringssl --config boringssl/cargo-config.toml
-```
-
-A BoringSSL tree already built for act-rs works too: pass its
-`cargo-config.toml` and build directory instead. The patch rewrites
-`Cargo.lock`; restore it before committing.
-
-The crate is `no_std` with `alloc`. The `std` feature enables the standard
-library in `p256` and `getrandom`, and the precomputed generator tables of
-`p256`.
 
 ## Design
 
@@ -166,7 +142,7 @@ library in `p256` and `getrandom`, and the precomputed generator tables of
 
 ```sh
 cargo test                                   # RustCrypto
-cargo test --features boringssl ...          # BoringSSL, see above
+cargo test --features boringssl              # BoringSSL
 cargo test --features rustcrypto,boringssl   # both, plus interoperability
 cargo bench                                  # criterion, per backend
 ```

@@ -2,8 +2,8 @@
 //! Anchor Set sizes.
 //!
 //! Run with `cargo bench` for the RustCrypto backend, or with
-//! `--features boringssl` and the `bssl-sys` patch described in the README
-//! for BoringSSL; both features together benchmark both.
+//! `--features boringssl` for BoringSSL; both features together benchmark
+//! both.
 
 use std::time::Duration;
 

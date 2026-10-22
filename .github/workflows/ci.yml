@@ -48,7 +48,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: taiki-e/install-action@cargo-hack
       - uses: Swatinem/rust-cache@v2
-      # `boringssl` needs a BoringSSL build; the `boringssl` job covers it.
+      # `boringssl` has a comparatively expensive native build; its job covers it.
       - run: cargo hack check --feature-powerset --features rustcrypto --exclude-features boringssl --all-targets
 
   msrv:
@@ -87,8 +87,6 @@ jobs:
   boringssl:
     name: Test, lint (BoringSSL and both backends)
     runs-on: ubuntu-latest
-    env:
-      BORINGSSL_BUILD_DIR: ${{ github.workspace }}/boringssl/build
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
@@ -96,24 +94,9 @@ jobs:
           components: clippy
       - uses: Swatinem/rust-cache@v2
       - run: sudo apt-get update && sudo apt-get install -y cmake ninja-build
-      - uses: taiki-e/install-action@v2
-        with:
-          tool: bindgen-cli
-      # A new runner image rebuilds BoringSSL rather than restoring a build
-      # made on the old one. `ImageOS` is set on the runner, not in `env`.
-      - id: image
-        run: echo "os=$ImageOS" >> "$GITHUB_OUTPUT"
-      - name: Cache the BoringSSL build
-        id: boringssl-cache
-        uses: actions/cache@v6
-        with:
-          path: boringssl
-          key: boringssl-${{ steps.image.outputs.os }}-${{ hashFiles('scripts/build-boringssl.sh') }}
-      - if: steps.boringssl-cache.outputs.cache-hit != 'true'
-        run: scripts/build-boringssl.sh
-      - run: cargo test --no-default-features --features boringssl --config boringssl/cargo-config.toml
-      - run: cargo test --features rustcrypto,boringssl --config boringssl/cargo-config.toml
-      - run: cargo clippy --all-targets --features rustcrypto,boringssl --config boringssl/cargo-config.toml -- -D warnings
+      - run: cargo test --no-default-features --features boringssl
+      - run: cargo test --features rustcrypto,boringssl
+      - run: cargo clippy --all-targets --features rustcrypto,boringssl -- -D warnings
 
   mutants:
     name: Mutation testing (changed lines)

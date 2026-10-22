@@ -25,9 +25,9 @@ std = ["p256?/std", "p256?/precomputed-tables", "getrandom?/std"]
 # Randomness from the JavaScript host on `wasm32-unknown-unknown`, for the
 # `rustcrypto` backend; other bare targets need a `getrandom` custom backend.
 wasm_js = ["getrandom?/wasm_js"]
-# BoringSSL backend over the `bssl-sys` FFI bindings. `bssl-sys` is not
-# published; patch it to a BoringSSL checkout (see README).
-boringssl = ["dep:bssl-sys"]
+# BoringSSL backend through the `boring` crate. A few constant-time primitives
+# not exposed by its safe API use the companion `boring-sys` bindings.
+boringssl = ["dep:boring", "dep:boring-sys", "dep:foreign-types"]
 
 [dependencies]
 subtle = { version = "2.6", default-features = false }
@@ -37,7 +37,9 @@ p256 = { version = "0.14", default-features = false, features = ["arithmetic", "
 sha2 = { version = "0.11", default-features = false, features = ["zeroize"], optional = true }
 getrandom = { version = "0.4", optional = true }
 
-bssl-sys = { version = "0.1.0", optional = true }
+boring = { version = "5.3.0", optional = true }
+boring-sys = { version = "5.3.0", optional = true }
+foreign-types = { version = "0.5", optional = true }
 
 [dev-dependencies]
 hex = "0.4"

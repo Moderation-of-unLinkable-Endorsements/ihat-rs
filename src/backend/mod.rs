@@ -21,7 +21,7 @@
 //! * `rustcrypto::RustCrypto` (feature `rustcrypto`): the `p256`, `sha2`,
 //!   and `getrandom` crates.
 //! * `boringssl::BoringSsl` (feature `boringssl`): BoringSSL through the
-//!   `bssl-sys` bindings, as Chromium builds it.
+//!   `boring` crate, with `boring-sys` for APIs without safe bindings.
 //!
 //! Both encode scalars as 32-byte big-endian integers below the group order
 //! and points as 33-byte compressed SEC1 strings, and neither accepts an
