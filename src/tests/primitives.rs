@@ -352,7 +352,7 @@ mod parity {
         let anchor_bssl: [PublicKey<BoringSsl>; 3] =
             core::array::from_fn(|i| PublicKey::from_bytes(&anchor_rc[i].to_bytes()).unwrap());
         // The Anchor on RustCrypto, the Client on BoringSSL.
-        let (state, commitment) = crate::commit::<RustCrypto>(b"iss", b"sid").unwrap();
+        let (state, commitment) = crate::commit::<RustCrypto>(b"iss").unwrap();
         let commitment =
             crate::CommitMessage::<BoringSsl>::from_bytes(&commitment.to_bytes()).unwrap();
         let (client, challenge) =
