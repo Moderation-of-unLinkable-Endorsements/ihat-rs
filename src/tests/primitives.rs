@@ -103,6 +103,32 @@ fn point_arithmetic<B: Backend>() {
     assert!(bool::from(zeroized.is_identity()));
 }
 
+/// `ct_select` returns the entry at every index, and nothing out of range
+/// or from a table that holds the identity.
+fn point_selection<B: Backend>() {
+    let g = B::Point::generator();
+    let mut table: Vec<B::Point> = (1..=5)
+        .map(|k| g.mul(&B::Scalar::from(k)))
+        .chain([g.neg()])
+        .collect();
+    for (i, point) in table.iter().enumerate() {
+        let selected = B::Point::ct_select(&table, i).into_option();
+        assert_eq!(selected.as_ref(), Some(point), "index {i}");
+    }
+    assert!(bool::from(
+        B::Point::ct_select(&table, table.len()).is_none()
+    ));
+    assert!(bool::from(
+        B::Point::ct_select(core::iter::empty(), 0).is_none()
+    ));
+
+    table.insert(3, B::Point::identity());
+    for i in 0..table.len() {
+        let selected = B::Point::ct_select(&table, i);
+        assert!(bool::from(selected.is_none()), "index {i}");
+    }
+}
+
 /// Whether `x` is a coordinate, by attempting to decode a point with it.
 fn decodes<B: Backend>(x: &[u8; SCALAR_LENGTH]) -> bool {
     let mut bytes = [0u8; 33];
@@ -312,6 +338,7 @@ backend_tests!(
     expand_message_xmd_vectors,
     hash_to_curve_vectors,
     point_arithmetic,
+    point_selection,
     x_coordinate_test,
     permutation_properties,
     derivations,

@@ -132,10 +132,9 @@ library in `p256` and `getrandom`, and the precomputed generator tables of
   each level's sibling by constant-time scans, and selects the opening of an
   odd last node in constant time, so no branch or memory access depends on
   the Anchor's index.
-* **Redemption** forms `X_hat` as `delta * B + sum_i [i = index] * pkA_i`,
-  multiplying every key by a selected 0 or 1, rather than indexing the
-  Anchor Set by the secret index. Branch commitments are computed as
-  `(c * X_hat + z * B) - c * pkA_i`, one multiplication per key.
+* **Redemption** forms `X_hat` as `delta * B + pkA_i`, selecting the
+    key `pkA_i` from the Anchor Set in constant time. Branch commitments are
+    computed as `(c * X_hat + z * B) - c * pkA_i`, one multiplication per key.
 
 ## Security
 
