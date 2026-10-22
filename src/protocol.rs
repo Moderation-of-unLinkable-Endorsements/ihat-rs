@@ -4,7 +4,7 @@
 use alloc::vec::Vec;
 use core::fmt;
 
-use subtle::{ConditionallySelectable, ConstantTimeEq};
+use subtle::ConstantTimeEq;
 use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};
 
 use crate::backend::{Backend, POINT_LENGTH, Point, SCALAR_LENGTH, Scalar};
@@ -668,17 +668,16 @@ pub(crate) fn redeem_with<B: Backend, R: Random>(
     rng.fill(rand.as_mut());
     let mut delta = hash::derive_scalars::<B>(CTX, &rand[..NSEED], b"delta", 1)?[0];
 
-    // X_hat = anchor_set[index] + delta * B, selecting the key by
-    // multiplying each by 0 or 1 so that `index` does not steer memory
-    // accesses.
-    let (zero, one) = (B::Scalar::default(), B::Scalar::from(1));
-    let mut x_hat = B::Point::mul_generator(&delta);
-    for (i, key) in anchor_set.iter().enumerate() {
-        let at = (i as u64).ct_eq(&u64::from(index));
-        let mut selector = B::Scalar::conditional_select(&zero, &one, at);
-        x_hat = x_hat.add(&key.pk.mul(&selector));
-        selector.zeroize();
-    }
+    // X_hat = anchor_set[index] + delta * B, selecting the key in constant
+    // time so that `index` does not steer memory accesses.
+    let Some(mut selected) =
+        B::Point::ct_select(anchor_set.iter().map(|key| &key.pk), usize::from(index)).into_option()
+    else {
+        delta.zeroize();
+        return Err(Error::InvalidInput);
+    };
+    let x_hat = B::Point::mul_generator(&delta).add(&selected);
+    selected.zeroize();
     let signature = &endorsement.signature;
     let shown = Signature {
         c: signature.c,

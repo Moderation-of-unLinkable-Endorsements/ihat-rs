@@ -344,6 +344,27 @@ fn input_limits<B: Backend>() {
         redeem_with(&public, 0, endorsement, CTX_ISS, CTX_RED, &long, &mut rng).unwrap_err(),
         Error::InvalidInput
     );
+    // The identity is not an Anchor key, wherever it is in the set.
+    let with_identity = [
+        public[0].clone(),
+        PublicKey::<B> {
+            pk: B::Point::identity(),
+        },
+    ];
+    let endorsement = issue(&secret[0], CTX_ISS, CTX_RED);
+    assert_eq!(
+        redeem_with(
+            &with_identity,
+            0,
+            endorsement,
+            CTX_ISS,
+            CTX_RED,
+            DIGEST,
+            &mut rng
+        )
+        .unwrap_err(),
+        Error::InvalidInput
+    );
 }
 
 fn keys_encode<B: Backend>() {
