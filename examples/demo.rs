@@ -2,8 +2,9 @@
 //! whose Anchor Set lists them all, printing the message sizes.
 
 use ec_ihat::{
-    ChallengeMessage, CommitMessage, Endorsement, PublicKey, Redemption, ResponseMessage,
-    SecretKey, challenge, commit, finalize, redeem, respond, verify, verify_redemption,
+    Backend, ChallengeMessage, CommitMessage, DefaultBackend, Endorsement, PublicKey, Redemption,
+    ResponseMessage, SecretKey, challenge, commit, finalize, redeem, respond, verify,
+    verify_redemption,
 };
 
 fn main() -> Result<(), ec_ihat::Error> {
@@ -12,7 +13,7 @@ fn main() -> Result<(), ec_ihat::Error> {
 
     // Eight Anchors; the Moderator accepts Endorsements from any of them.
     let anchors: Vec<SecretKey> = (0..8)
-        .map(|_| SecretKey::generate())
+        .map(|_| SecretKey::from_seed(&DefaultBackend::generate_seed()))
         .collect::<Result<_, _>>()?;
     let anchor_set: Vec<PublicKey> = anchors.iter().map(SecretKey::public_key).collect();
 

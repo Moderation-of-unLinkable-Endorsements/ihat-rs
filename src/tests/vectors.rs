@@ -97,10 +97,9 @@ fn replay<B: Backend>(text: &str) {
     .unwrap();
     assert_eq!(scalars_hex::<B>(&scalars), expected);
 
-    let mut rng = Replay::new(&v.hex("key.rand"));
-    let key = SecretKey::<B>::generate_with(&mut rng).unwrap();
-    rng.finish();
-    assert_eq!(key.to_bytes().to_vec(), v.hex("key.skA"));
+    let seed: [u8; crate::SEED_LENGTH] = v.hex("key.rand").try_into().unwrap();
+    let key = SecretKey::<B>::from_seed(&seed).unwrap();
+    assert_eq!(key.sk.to_bytes().to_vec(), v.hex("key.skA"));
     let public_key = key.public_key();
     assert_eq!(public_key.to_bytes().to_vec(), v.hex("key.pkA"));
     let p_pk = permutation::p::<B>(&public_key.pk).unwrap();

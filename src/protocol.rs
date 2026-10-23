@@ -27,49 +27,17 @@ const MAX_REDEMPTION_CONTEXT: usize = u16::MAX as usize - NULLIFIER_LENGTH - 4;
 /// An Anchor's key pair `(skA, pkA)`.
 #[derive(Clone)]
 pub struct SecretKey<B: Backend = DefaultBackend> {
-    sk: B::Scalar,
+    pub(crate) sk: B::Scalar,
     pk: B::Point,
 }
 
 impl<B: Backend> SecretKey<B> {
-    /// `G.GenerateKeyPair()`: a key pair from fresh randomness.
-    pub fn generate() -> Result<Self, Error> {
-        Self::generate_with(&mut SystemRandom::<B>::new())
-    }
-
-    pub(crate) fn generate_with<R: Random>(rng: &mut R) -> Result<Self, Error> {
-        let mut seed = [0u8; NSEED];
-        rng.fill(&mut seed);
-        let key = Self::from_seed(&seed, b"GenerateKeyPair");
-        seed.zeroize();
-        key
-    }
-
-    /// `G.DeriveKeyPair(seed, info)`: a key pair from a seed of `Nseed`
-    /// uniformly random bytes that is used for nothing else.
-    pub fn from_seed(seed: &[u8; NSEED], info: &[u8]) -> Result<Self, Error> {
-        Ok(Self::from_scalar(hash::derive_key_scalar::<B>(
-            CTX, seed, info,
-        )?))
-    }
-
-    /// The key pair whose secret scalar is `bytes`, big-endian.
-    pub fn from_bytes(bytes: &[u8; SCALAR_LENGTH]) -> Result<Self, Error> {
-        let sk = hash::require(B::Scalar::from_bytes(bytes), Error::Deserialize)?;
-        if bool::from(sk.is_zero()) {
-            return Err(Error::Deserialize);
-        }
-        Ok(Self::from_scalar(sk))
-    }
-
-    fn from_scalar(sk: B::Scalar) -> Self {
+    /// `G.DeriveKeyPair(seed, "GenerateKeyPair")`: derives a key pair from a
+    /// seed.
+    pub fn from_seed(seed: &[u8; NSEED]) -> Result<Self, Error> {
+        let sk = hash::derive_key_scalar::<B>(CTX, seed, b"GenerateKeyPair")?;
         let pk = B::Point::mul_generator(&sk);
-        Self { sk, pk }
-    }
-
-    /// The secret scalar `skA`, big-endian.
-    pub fn to_bytes(&self) -> [u8; SCALAR_LENGTH] {
-        self.sk.to_bytes()
+        Ok(Self { sk, pk })
     }
 
     /// The public key `pkA`.

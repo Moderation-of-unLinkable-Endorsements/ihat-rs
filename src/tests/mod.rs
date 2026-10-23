@@ -78,3 +78,10 @@ impl Random for Replay {
 pub(crate) fn os_rng<B: crate::Backend>() -> crate::random::SystemRandom<B> {
     crate::random::SystemRandom::new()
 }
+
+/// A key derived from a seed drawn from `rng`.
+pub(crate) fn random_key<B: crate::Backend>(rng: &mut impl Random) -> crate::SecretKey<B> {
+    let mut seed = [0u8; crate::SEED_LENGTH];
+    rng.fill(&mut seed);
+    crate::SecretKey::from_seed(&seed).unwrap()
+}
