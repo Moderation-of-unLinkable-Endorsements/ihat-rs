@@ -351,6 +351,7 @@ mod parity {
     use crate::backend::boringssl::BoringSsl;
     use crate::backend::rustcrypto::RustCrypto;
     use crate::backend::{Point, Scalar};
+    use crate::tests::{os_rng, random_key};
     use crate::{PublicKey, SecretKey};
 
     #[test]
@@ -374,7 +375,7 @@ mod parity {
     #[test]
     fn redemptions_interoperate() {
         let keys: [SecretKey<RustCrypto>; 3] =
-            core::array::from_fn(|_| SecretKey::generate().unwrap());
+            core::array::from_fn(|_| random_key(&mut os_rng::<RustCrypto>()));
         let anchor_rc: [PublicKey<RustCrypto>; 3] = core::array::from_fn(|i| keys[i].public_key());
         let anchor_bssl: [PublicKey<BoringSsl>; 3] =
             core::array::from_fn(|i| PublicKey::from_bytes(&anchor_rc[i].to_bytes()).unwrap());
