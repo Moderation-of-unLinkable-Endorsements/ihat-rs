@@ -17,10 +17,12 @@
 //! # Flow
 //!
 //! ```
-//! use ec_ihat::{PublicKey, SecretKey};
+//! use ec_ihat::{Backend, DefaultBackend, PublicKey, SecretKey};
 //!
-//! // The Anchor holds a key pair and publishes the public key.
-//! let secret_key: SecretKey = SecretKey::generate()?;
+//! // The Anchor derives its key pair from a secret random seed, which it
+//! // keeps in order to restore the key, and publishes the public key.
+//! let secret_key_seed = DefaultBackend::generate_seed();
+//! let secret_key: SecretKey = SecretKey::from_seed(&secret_key_seed)?;
 //! let public_key = secret_key.public_key();
 //! let ctx_iss = b"epoch-42";
 //! let ctx_red = b"moderator.example";
@@ -35,7 +37,7 @@
 //!
 //! // Redemption: the Moderator accepts Endorsements from any Anchor in its
 //! // Anchor Set; the Client proves its Anchor is one of them.
-//! let other: PublicKey = SecretKey::generate()?.public_key();
+//! let other: PublicKey = SecretKey::from_seed(&DefaultBackend::generate_seed())?.public_key();
 //! let anchor_set = [other, public_key];
 //! let challenge_digest = b"moderator challenge";
 //! let redemption =

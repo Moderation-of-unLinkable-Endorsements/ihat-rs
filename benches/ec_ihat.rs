@@ -19,7 +19,7 @@ const CTX_RED: &[u8] = b"benchmark-redemption-context";
 const DIGEST: &[u8] = b"benchmark-challenge-digest";
 
 fn bench_backend<B: Backend>(c: &mut Criterion, backend: &str) {
-    let key = SecretKey::<B>::generate().unwrap();
+    let key = SecretKey::from_seed(&B::generate_seed()).unwrap();
     let public_key = key.public_key();
     let mut group = c.benchmark_group(format!("{backend}/issuance"));
     group
@@ -27,7 +27,7 @@ fn bench_backend<B: Backend>(c: &mut Criterion, backend: &str) {
         .sample_size(20);
 
     group.bench_function("key_generation", |b| {
-        b.iter(|| SecretKey::<B>::generate().unwrap())
+        b.iter(|| SecretKey::<B>::from_seed(&B::generate_seed()).unwrap())
     });
     group.bench_function("commit", |b| b.iter(|| commit::<B>(CTX_ISS).unwrap()));
     let (_, commitment) = commit::<B>(CTX_ISS).unwrap();
@@ -73,7 +73,11 @@ fn bench_backend<B: Backend>(c: &mut Criterion, backend: &str) {
         .sample_size(10);
     for n in [2usize, 8, 32, 128] {
         let mut anchor_set: Vec<PublicKey<B>> = (0..n - 1)
-            .map(|_| SecretKey::<B>::generate().unwrap().public_key())
+            .map(|_| {
+                SecretKey::<B>::from_seed(&B::generate_seed())
+                    .unwrap()
+                    .public_key()
+            })
             .collect();
         let index = n / 2;
         anchor_set.insert(index, public_key.clone());

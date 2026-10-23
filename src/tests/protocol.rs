@@ -3,9 +3,9 @@
 
 use alloc::vec::Vec;
 
-use super::{Replay, os_rng};
+use super::{Replay, os_rng, random_key};
 use crate::Error;
-use crate::backend::{Backend, POINT_LENGTH, Point, SCALAR_LENGTH, Scalar};
+use crate::backend::{Backend, POINT_LENGTH, Point, SCALAR_LENGTH};
 use crate::protocol::{
     ChallengeMessage, CommitMessage, Endorsement, PublicKey, Redemption, ResponseMessage,
     SecretKey, Signature, challenge_with, commit_with, compute_challenge_for_tests, finalize,
@@ -18,9 +18,7 @@ const CTX_RED: &[u8] = b"redemption context";
 const DIGEST: &[u8] = b"challenge digest";
 
 fn keys<B: Backend>(n: usize) -> (Vec<SecretKey<B>>, Vec<PublicKey<B>>) {
-    let secret: Vec<SecretKey<B>> = (0..n)
-        .map(|_| SecretKey::generate_with(&mut os_rng::<B>()).unwrap())
-        .collect();
+    let secret: Vec<SecretKey<B>> = (0..n).map(|_| random_key(&mut os_rng::<B>())).collect();
     let public = secret.iter().map(SecretKey::public_key).collect();
     (secret, public)
 }
@@ -279,9 +277,9 @@ fn issuance_rejections<B: Backend>() {
 
     // A key whose discrete logarithm `x` the Client knows, and `s = c * y *
     // x`, reconstruct `A` as the identity, which is rejected.
-    let x = SecretKey::<B>::generate_with(&mut rng).unwrap();
+    let x = random_key::<B>(&mut rng);
     let (c, y) = (B::Scalar::from(3), B::Scalar::from(5));
-    let x_scalar = B::Scalar::from_bytes(&x.to_bytes()).unwrap();
+    let x_scalar = x.sk;
     let forged = Endorsement::<B> {
         signature: Signature {
             c,
@@ -368,13 +366,7 @@ fn input_limits<B: Backend>() {
 }
 
 fn keys_encode<B: Backend>() {
-    let key = SecretKey::<B>::generate_with(&mut os_rng::<B>()).unwrap();
-    let decoded = SecretKey::<B>::from_bytes(&key.to_bytes()).unwrap();
-    assert_eq!(decoded.public_key(), key.public_key());
-    assert_eq!(
-        SecretKey::<B>::from_bytes(&[0; SCALAR_LENGTH]).unwrap_err(),
-        Error::Deserialize
-    );
+    let key = random_key::<B>(&mut os_rng::<B>());
     let public = key.public_key();
     assert_eq!(
         PublicKey::<B>::from_bytes(&public.to_bytes()).unwrap(),
@@ -384,12 +376,19 @@ fn keys_encode<B: Backend>() {
         PublicKey::<B>::from_bytes(&[0; POINT_LENGTH]).unwrap_err(),
         Error::Deserialize
     );
-    let from_seed = SecretKey::<B>::from_seed(&[3; 48], b"info").unwrap();
+    // Generated seeds are fresh.
+    let seed = B::generate_seed();
+    assert_ne!(*seed, *B::generate_seed());
+    SecretKey::<B>::from_seed(&seed).unwrap();
+    // A seed determines its key.
+    let seeded = SecretKey::<B>::from_seed(&[3; 48]).unwrap();
     assert_eq!(
-        from_seed.to_bytes(),
-        SecretKey::<B>::from_seed(&[3; 48], b"info")
-            .unwrap()
-            .to_bytes()
+        seeded.public_key(),
+        SecretKey::<B>::from_seed(&[3; 48]).unwrap().public_key()
+    );
+    assert_ne!(
+        SecretKey::<B>::from_seed(&[4; 48]).unwrap().public_key(),
+        seeded.public_key()
     );
 }
 
@@ -537,7 +536,7 @@ fn identity_public_keys_are_rejected<B: Backend>() {
     let (secret, _) = keys::<B>(1);
     let endorsement = issue(&secret[0], CTX_ISS, CTX_RED);
     // A zeroized key has the identity as its public key.
-    let mut zeroized = SecretKey::<B>::generate_with(&mut os_rng::<B>()).unwrap();
+    let mut zeroized = random_key::<B>(&mut os_rng::<B>());
     zeroized.zeroize();
     let identity = zeroized.public_key();
     let (state, commitment) = commit_with::<B, _>(CTX_ISS, &mut os_rng::<B>()).unwrap();
