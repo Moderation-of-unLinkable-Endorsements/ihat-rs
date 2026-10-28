@@ -17,19 +17,36 @@
 //! `HashToScalar`, `DeriveScalars`, `ExpandScalars`, `DeriveNonces`, and
 //! `DeriveKeyPair`.
 //!
-//! These are the functions of act-rs's `hash` module, taking the protocol
-//! context `ctx` as their first parameter and forming each domain
-//! separation tag as a label followed by it, so that one copy can serve
-//! both protocols. They are to move into a `mole-p256` crate shared with
-//! act-rs; see the TODO in `lib.rs`.
+//! Shared by IHAT and ACT. Each domain separation tag is a label followed by
+//! the protocol context `ctx` supplied by the caller. This module is to move
+//! into a `mole-p256` crate shared with act-rs; see the TODO in `lib.rs`.
 
 use alloc::vec::Vec;
 
 use subtle::CtOption;
 use zeroize::{Zeroize, Zeroizing};
 
-use crate::Error;
 use crate::backend::{Backend, SCALAR_LENGTH, Scalar, Sha256};
+
+/// A hashing or scalar derivation failure.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Error {
+    /// An input has an invalid length or count.
+    InvalidInput,
+    /// Derivation failed to produce a usable scalar or group element.
+    Derive,
+}
+
+impl core::fmt::Display for Error {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.write_str(match self {
+            Self::InvalidInput => "input has an invalid length or count",
+            Self::Derive => "derivation failed to produce a usable scalar or group element",
+        })
+    }
+}
+
+impl core::error::Error for Error {}
 
 /// The seed length `Nseed`.
 pub(crate) const NSEED: usize = crate::SEED_LENGTH;
@@ -46,13 +63,13 @@ const NH: usize = 32;
 /// `expand_message_xmd` with SHA-256 (RFC 9380, Section 5.3.1), with the
 /// message split into a prefix absorbed once and a suffix supplied per call.
 /// The domain separation tag is the concatenation of `dst`.
-pub(crate) struct XmdPrefix<H: Sha256> {
+pub struct XmdPrefix<H: Sha256> {
     hasher: H,
 }
 
 impl<H: Sha256> XmdPrefix<H> {
     /// Absorbs `Z_pad || prefix`.
-    pub(crate) fn new(prefix: &[&[u8]]) -> Self {
+    pub fn new(prefix: &[&[u8]]) -> Self {
         let mut hasher = H::new();
         hasher.update(&[0u8; 64]);
         for part in prefix {
@@ -72,7 +89,7 @@ impl<H: Sha256> XmdPrefix<H> {
     ///
     /// `dst` is at most 255 bytes and `out` at most `255 * 32` bytes; the
     /// tags of this crate are short and every output is 32 or 48 bytes.
-    pub(crate) fn expand_into(&self, suffix: &[&[u8]], dst: &[&[u8]], out: &mut [u8]) {
+    pub fn expand_into(&self, suffix: &[&[u8]], dst: &[&[u8]], out: &mut [u8]) {
         let dst_len = dst.iter().map(|part| part.len()).sum::<usize>();
         debug_assert!(dst_len <= 255 && out.len() <= 255 * 32);
         let dst_prime_tail = [dst_len as u8];
@@ -128,149 +145,164 @@ fn two_to_192<B: Backend>() -> B::Scalar {
     B::Scalar::from_bytes(&bytes).unwrap_or(B::Scalar::default())
 }
 
-/// Reduces a 48-byte big-endian integer modulo the order, in constant time,
-/// as `hi * 2^192 + lo` over two canonical halves.
-pub(crate) fn reduce_be_48<B: Backend>(bytes: &[u8; XMD_LENGTH]) -> B::Scalar {
-    let (hi, lo) = bytes.split_at(24);
-    scalar_from_u192::<B>(hi) * two_to_192::<B>() + scalar_from_u192::<B>(lo)
-}
-
-/// `G.HashToScalar(msg)`: `hash_to_field` with `L = 48` under the tag
-/// `"HashToScalar-" || ctx`. `msg` is hashed as the concatenation of its
-/// parts.
-pub(crate) fn hash_to_scalar<B: Backend>(ctx: &[u8], msg: &[&[u8]]) -> B::Scalar {
-    let mut uniform = XmdPrefix::<B::Sha256>::new(&[]).expand(msg, &[b"HashToScalar-", ctx]);
-    let scalar = reduce_be_48::<B>(&uniform);
-    uniform.zeroize();
-    scalar
-}
-
-/// `G.HashToGroup(msg)`: `P256_XMD:SHA-256_SSWU_RO_` under the tag
-/// `"HashToGroup-" || ctx`.
-pub(crate) fn hash_to_group<B: Backend>(ctx: &[u8], msg: &[&[u8]]) -> Result<B::Point, Error> {
-    B::hash_to_curve(msg, &[b"HashToGroup-", ctx]).ok_or(Error::Derive)
-}
-
-/// `G.DeriveScalars(rand, info, count)`: `rand` and `info` hashed into a
-/// key, which `expand_scalars` expands into `count` scalars.
-pub(crate) fn derive_scalars<B: Backend>(
-    ctx: &[u8],
-    rand: &[u8],
-    info: &[u8],
-    count: usize,
-) -> Result<Zeroizing<Vec<B::Scalar>>, Error> {
-    if rand.len() != NSEED {
-        return Err(Error::InvalidInput);
-    }
-    let info_len = u16::try_from(info.len()).map_err(|_| Error::InvalidInput)?;
-    let mut key = Zeroizing::new([0u8; NH]);
-    XmdPrefix::<B::Sha256>::new(&[]).expand_into(
-        &[rand, &info_len.to_be_bytes(), info],
-        &[b"DeriveScalars-", ctx],
-        key.as_mut(),
-    );
-    expand_scalars::<B>(ctx, &key, count)
-}
-
-/// `G.DeriveNonces(secret, label, instance, rand, count)`: `rand`, the
-/// secret, and the operation hashed into a key, with `rand` and the secret
-/// each padded to whole blocks of the hash function, then expanded into
-/// `count` nonces. `instance` is supplied in parts and hashed as their
-/// concatenation.
-pub(crate) fn derive_nonces<B: Backend>(
-    ctx: &[u8],
-    secret: &[u8],
-    label: &[u8],
-    instance: &[&[u8]],
-    rand: &[u8],
-    count: usize,
-) -> Result<Zeroizing<Vec<B::Scalar>>, Error> {
-    if rand.len() != NSEED {
-        return Err(Error::InvalidInput);
-    }
-    let label_len = u16::try_from(label.len()).map_err(|_| Error::InvalidInput)?;
-    let secret_len = u32::try_from(secret.len()).map_err(|_| Error::InvalidInput)?;
-    let instance_len = instance.iter().map(|part| part.len()).sum::<usize>();
-    let instance_len = u32::try_from(instance_len).map_err(|_| Error::InvalidInput)?;
-    let (label_len, secret_len, instance_len) = (
-        label_len.to_be_bytes(),
-        secret_len.to_be_bytes(),
-        instance_len.to_be_bytes(),
-    );
-    let zeros = [0u8; S_IN_BYTES];
-    let rand_pad = &zeros[..pad_to_block(NSEED)];
-    let secret_pad = &zeros[..pad_to_block(secret_len.len() + secret.len())];
-    let mut parts: Vec<&[u8]> = alloc::vec![
-        rand,
-        rand_pad,
-        &secret_len,
-        secret,
-        secret_pad,
-        &label_len,
-        label,
-        &instance_len,
-    ];
-    parts.extend_from_slice(instance);
-    let mut key = Zeroizing::new([0u8; NH]);
-    XmdPrefix::<B::Sha256>::new(&[]).expand_into(&parts, &[b"DeriveNonces-", ctx], key.as_mut());
-    expand_scalars::<B>(ctx, &key, count)
-}
-
 /// The number of zero bytes `PadToBlock` appends to a value of `len` bytes.
 fn pad_to_block(len: usize) -> usize {
     (S_IN_BYTES - len % S_IN_BYTES) % S_IN_BYTES
 }
 
-/// `G.ExpandScalars(key, count)`: `HashToScalar(key || I2OSP(i, 4))` under
-/// the tag `"ExpandScalars-" || ctx`, for each `i` below `count`.
-///
-/// Every scalar is computed before a zero one is reported, so the time taken
-/// does not depend on where it occurs.
-pub(crate) fn expand_scalars<B: Backend>(
-    ctx: &[u8],
-    key: &[u8; NH],
-    count: usize,
-) -> Result<Zeroizing<Vec<B::Scalar>>, Error> {
-    let count_bound = u32::try_from(count).map_err(|_| Error::InvalidInput)?;
-    let prefix = XmdPrefix::<B::Sha256>::new(&[key]);
-    let mut scalars = Zeroizing::new(Vec::with_capacity(count));
-    let mut result = Ok(());
-    for i in 0..count_bound {
-        let mut uniform = prefix.expand(&[&i.to_be_bytes()], &[b"ExpandScalars-", ctx]);
-        let scalar = reduce_be_48::<B>(&uniform);
-        uniform.zeroize();
-        if bool::from(scalar.is_zero()) {
-            result = Err(Error::Derive);
-        }
-        scalars.push(scalar);
+/// Shared hashing and derivation methods, available on every [`Backend`].
+pub trait BackendHashExt: Backend {
+    /// Reduces a 48-byte big-endian integer modulo the order, in constant time,
+    /// as `hi * 2^192 + lo` over two canonical halves.
+    fn reduce_be_48(bytes: &[u8; XMD_LENGTH]) -> Self::Scalar {
+        let (hi, lo) = bytes.split_at(24);
+        scalar_from_u192::<Self>(hi) * two_to_192::<Self>() + scalar_from_u192::<Self>(lo)
     }
-    result.map(|()| scalars)
+
+    /// `G.HashToScalar(msg)`: `hash_to_field` with `L = 48` under the tag
+    /// `"HashToScalar-" || ctx`. `msg` is hashed as the concatenation of its
+    /// parts.
+    fn hash_to_scalar(ctx: &[u8], msg: &[&[u8]]) -> Self::Scalar {
+        Self::hash_to_scalar_with_dst(msg, &[b"HashToScalar-", ctx])
+    }
+
+    /// `hash_to_field` with `L = 48` under an explicit domain separation tag.
+    /// Both `msg` and `dst` are hashed as the concatenation of their parts.
+    fn hash_to_scalar_with_dst(msg: &[&[u8]], dst: &[&[u8]]) -> Self::Scalar {
+        let mut uniform = XmdPrefix::<Self::Sha256>::new(&[]).expand(msg, dst);
+        let scalar = Self::reduce_be_48(&uniform);
+        uniform.zeroize();
+        scalar
+    }
+
+    /// `G.HashToGroup(msg)`: `P256_XMD:SHA-256_SSWU_RO_` under the tag
+    /// `"HashToGroup-" || ctx`.
+    fn hash_to_group(ctx: &[u8], msg: &[&[u8]]) -> Result<Self::Point, Error> {
+        Self::hash_to_curve(msg, &[b"HashToGroup-", ctx]).ok_or(Error::Derive)
+    }
+
+    /// `G.DeriveScalars(rand, info, count)`: `rand` and `info` hashed into a
+    /// key, which `expand_scalars` expands into `count` scalars.
+    fn derive_scalars(
+        ctx: &[u8],
+        rand: &[u8],
+        info: &[u8],
+        count: usize,
+    ) -> Result<Zeroizing<Vec<Self::Scalar>>, Error> {
+        if rand.len() != NSEED {
+            return Err(Error::InvalidInput);
+        }
+        let info_len = u16::try_from(info.len()).map_err(|_| Error::InvalidInput)?;
+        let mut key = Zeroizing::new([0u8; NH]);
+        XmdPrefix::<Self::Sha256>::new(&[]).expand_into(
+            &[rand, &info_len.to_be_bytes(), info],
+            &[b"DeriveScalars-", ctx],
+            key.as_mut(),
+        );
+        Self::expand_scalars(ctx, &key, count)
+    }
+
+    /// `G.DeriveNonces(secret, label, instance, rand, count)`: `rand`, the
+    /// secret, and the operation hashed into a key, with `rand` and the secret
+    /// each padded to whole blocks of the hash function, then expanded into
+    /// `count` nonces. `instance` is supplied in parts and hashed as their
+    /// concatenation.
+    fn derive_nonces(
+        ctx: &[u8],
+        secret: &[u8],
+        label: &[u8],
+        instance: &[&[u8]],
+        rand: &[u8],
+        count: usize,
+    ) -> Result<Zeroizing<Vec<Self::Scalar>>, Error> {
+        if rand.len() != NSEED {
+            return Err(Error::InvalidInput);
+        }
+        let label_len = u16::try_from(label.len()).map_err(|_| Error::InvalidInput)?;
+        let secret_len = u32::try_from(secret.len()).map_err(|_| Error::InvalidInput)?;
+        let instance_len = instance.iter().map(|part| part.len()).sum::<usize>();
+        let instance_len = u32::try_from(instance_len).map_err(|_| Error::InvalidInput)?;
+        let (label_len, secret_len, instance_len) = (
+            label_len.to_be_bytes(),
+            secret_len.to_be_bytes(),
+            instance_len.to_be_bytes(),
+        );
+        let zeros = [0u8; S_IN_BYTES];
+        let rand_pad = &zeros[..pad_to_block(NSEED)];
+        let secret_pad = &zeros[..pad_to_block(secret_len.len() + secret.len())];
+        let mut parts: Vec<&[u8]> = alloc::vec![
+            rand,
+            rand_pad,
+            &secret_len,
+            secret,
+            secret_pad,
+            &label_len,
+            label,
+            &instance_len,
+        ];
+        parts.extend_from_slice(instance);
+        let mut key = Zeroizing::new([0u8; NH]);
+        XmdPrefix::<Self::Sha256>::new(&[]).expand_into(
+            &parts,
+            &[b"DeriveNonces-", ctx],
+            key.as_mut(),
+        );
+        Self::expand_scalars(ctx, &key, count)
+    }
+
+    /// `G.ExpandScalars(key, count)`: `HashToScalar(key || I2OSP(i, 4))` under
+    /// the tag `"ExpandScalars-" || ctx`, for each `i` below `count`.
+    ///
+    /// Every scalar is computed before a zero one is reported, so the time taken
+    /// does not depend on where it occurs.
+    fn expand_scalars(
+        ctx: &[u8],
+        key: &[u8; NH],
+        count: usize,
+    ) -> Result<Zeroizing<Vec<Self::Scalar>>, Error> {
+        let count_bound = u32::try_from(count).map_err(|_| Error::InvalidInput)?;
+        let prefix = XmdPrefix::<Self::Sha256>::new(&[key]);
+        let mut scalars = Zeroizing::new(Vec::with_capacity(count));
+        let mut result = Ok(());
+        for i in 0..count_bound {
+            let mut uniform = prefix.expand(&[&i.to_be_bytes()], &[b"ExpandScalars-", ctx]);
+            let scalar = Self::reduce_be_48(&uniform);
+            uniform.zeroize();
+            if bool::from(scalar.is_zero()) {
+                result = Err(Error::Derive);
+            }
+            scalars.push(scalar);
+        }
+        result.map(|()| scalars)
+    }
+
+    /// The secret scalar of `G.DeriveKeyPair(seed, info)`, as in RFC 9497,
+    /// Section 3.2.1, under the tag `"DeriveKeyPair-" || ctx`.
+    ///
+    /// The counter loop exits on the first nonzero output, a branch taken with
+    /// probability about `2^-256`; the draft specifies it.
+    fn derive_key_scalar(
+        ctx: &[u8],
+        seed: &[u8; NSEED],
+        info: &[u8],
+    ) -> Result<Self::Scalar, Error> {
+        let info_len = u16::try_from(info.len()).map_err(|_| Error::InvalidInput)?;
+        let prefix = XmdPrefix::<Self::Sha256>::new(&[seed, &info_len.to_be_bytes(), info]);
+        for counter in 0..=u8::MAX {
+            let mut uniform = prefix.expand(&[&[counter]], &[b"DeriveKeyPair-", ctx]);
+            let scalar = Self::reduce_be_48(&uniform);
+            uniform.zeroize();
+            if !bool::from(scalar.is_zero()) {
+                return Ok(scalar);
+            }
+        }
+        Err(Error::Derive)
+    }
 }
 
-/// The secret scalar of `G.DeriveKeyPair(seed, info)`, as in RFC 9497,
-/// Section 3.2.1, under the tag `"DeriveKeyPair-" || ctx`.
-///
-/// The counter loop exits on the first nonzero output, a branch taken with
-/// probability about `2^-256`; the draft specifies it.
-pub(crate) fn derive_key_scalar<B: Backend>(
-    ctx: &[u8],
-    seed: &[u8; NSEED],
-    info: &[u8],
-) -> Result<B::Scalar, Error> {
-    let info_len = u16::try_from(info.len()).map_err(|_| Error::InvalidInput)?;
-    let prefix = XmdPrefix::<B::Sha256>::new(&[seed, &info_len.to_be_bytes(), info]);
-    for counter in 0..=u8::MAX {
-        let mut uniform = prefix.expand(&[&[counter]], &[b"DeriveKeyPair-", ctx]);
-        let scalar = reduce_be_48::<B>(&uniform);
-        uniform.zeroize();
-        if !bool::from(scalar.is_zero()) {
-            return Ok(scalar);
-        }
-    }
-    Err(Error::Derive)
-}
+impl<B: Backend> BackendHashExt for B {}
 
 /// Checks that a `CtOption` holds a value, mapping absence to `error`.
-pub(crate) fn require<T>(value: CtOption<T>, error: Error) -> Result<T, Error> {
+pub(crate) fn require<T, E>(value: CtOption<T>, error: E) -> Result<T, E> {
     value.into_option().ok_or(error)
 }

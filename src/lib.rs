@@ -100,7 +100,7 @@ compile_error!("enable at least one backend feature: `rustcrypto` or `boringssl`
 
 pub mod backend;
 mod commitment;
-mod hash;
+pub mod hash;
 mod permutation;
 mod protocol;
 mod random;
@@ -168,6 +168,15 @@ pub enum Error {
     InvalidInput,
     /// The system random number generator is unavailable.
     Entropy,
+}
+
+impl From<hash::Error> for Error {
+    fn from(error: hash::Error) -> Self {
+        match error {
+            hash::Error::InvalidInput => Self::InvalidInput,
+            hash::Error::Derive => Self::Derive,
+        }
+    }
 }
 
 impl fmt::Display for Error {

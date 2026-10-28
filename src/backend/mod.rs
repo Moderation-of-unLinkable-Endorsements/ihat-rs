@@ -27,10 +27,7 @@
 //! and points as 33-byte compressed SEC1 strings, and neither accepts an
 //! encoding of the identity element.
 //!
-//! The trait has the names and signatures of the backend of `act-rs`, the
-//! Anonymous Credit Tokens implementation, without the fixed-base tables and
-//! SHAKE128 that only ACT uses, and with point negation and the
-//! x-coordinate test that the permutation `P` needs. It is to move into a
+//! ACT adds fixed-base multiplication for its proofs. This module is to move into a
 //! `mole-p256` crate shared with act-rs; see the TODO in `lib.rs`.
 
 use core::fmt::Debug;
