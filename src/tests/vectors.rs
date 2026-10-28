@@ -9,6 +9,7 @@ use alloc::vec::Vec;
 
 use super::Replay;
 use crate::backend::{Backend, POINT_LENGTH, Point, Scalar};
+use crate::hash::BackendHashExt;
 use crate::permutation;
 use crate::protocol::{
     ChallengeMessage, CommitMessage, Endorsement, PublicKey, Redemption, ResponseMessage,
@@ -88,7 +89,7 @@ fn replay<B: Backend>(text: &str) {
     );
 
     let expected = v.hex("derive.scalars");
-    let scalars = crate::hash::derive_scalars::<B>(
+    let scalars = B::derive_scalars(
         crate::PROTOCOL_CONTEXT,
         &v.hex("derive.rand"),
         &v.hex("derive.info"),
