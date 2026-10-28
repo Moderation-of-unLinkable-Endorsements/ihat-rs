@@ -9,7 +9,7 @@ use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};
 
 use crate::backend::{Backend, POINT_LENGTH, Point, SCALAR_LENGTH, Scalar};
 use crate::commitment::{self, Key, Node};
-use crate::hash::{self, NSEED};
+use crate::hash::{self, BackendHashExt, NSEED};
 use crate::random::{Random, SystemRandom};
 use crate::{DefaultBackend, Error, NULLIFIER_LENGTH, PROTOCOL_CONTEXT};
 
@@ -35,7 +35,7 @@ impl<B: Backend> SecretKey<B> {
     /// `G.DeriveKeyPair(seed, "GenerateKeyPair")`: derives a key pair from a
     /// seed.
     pub fn from_seed(seed: &[u8; NSEED]) -> Result<Self, Error> {
-        let sk = hash::derive_key_scalar::<B>(CTX, seed, b"GenerateKeyPair")?;
+        let sk = B::derive_key_scalar(CTX, seed, b"GenerateKeyPair")?;
         let pk = B::Point::mul_generator(&sk);
         Ok(Self { sk, pk })
     }
@@ -260,7 +260,7 @@ pub(crate) fn point_bytes<P: Point>(point: &P) -> [u8; POINT_LENGTH] {
 
 /// `CreateContextBase(ctx_iss)`.
 fn context_base<B: Backend>(ctx_iss: &[u8]) -> Result<B::Point, Error> {
-    hash::hash_to_group::<B>(CTX, &[&u16_prefix(ctx_iss)?, ctx_iss, b"ContextBase"])
+    B::hash_to_group(CTX, &[&u16_prefix(ctx_iss)?, ctx_iss, b"ContextBase"]).map_err(Into::into)
 }
 
 /// Checks that `Message(nf, ctx_red)` can be length-prefixed.
@@ -285,7 +285,7 @@ fn compute_challenge<B: Backend>(
     let nf_len = (NULLIFIER_LENGTH as u16).to_be_bytes();
     let ctx_red_len = u16_prefix(ctx_red)?;
     let message_len = ((2 + NULLIFIER_LENGTH + 2 + ctx_red.len()) as u16).to_be_bytes();
-    Ok(hash::hash_to_scalar::<B>(
+    Ok(B::hash_to_scalar(
         CTX,
         &[
             &u16_prefix(ctx_iss)?,
@@ -325,7 +325,7 @@ pub(crate) fn commit_with<B: Backend, R: Random>(
     let z = context_base::<B>(ctx_iss)?;
     let mut rand = [0u8; NSEED];
     rng.fill(&mut rand);
-    let derived = hash::derive_scalars::<B>(CTX, &rand, b"Commit", 3);
+    let derived = B::derive_scalars(CTX, &rand, b"Commit", 3);
     rand.zeroize();
     let derived = derived?;
     let state = AnchorState {
@@ -371,7 +371,7 @@ pub(crate) fn challenge_with<B: Backend, R: Random>(
     check_redemption_context(ctx_red)?;
     let mut rand = Zeroizing::new([0u8; NULLIFIER_LENGTH + NSEED]);
     rng.fill(rand.as_mut());
-    let derived = hash::derive_scalars::<B>(CTX, &rand[NULLIFIER_LENGTH..], b"Challenge", 4)?;
+    let derived = B::derive_scalars(CTX, &rand[NULLIFIER_LENGTH..], b"Challenge", 4)?;
     let mut state = ClientState::<B> {
         nf: [0; NULLIFIER_LENGTH],
         ctx_iss: ctx_iss.to_vec(),
@@ -561,7 +561,7 @@ fn compute_proof_challenge<B: Backend>(
     for key in commitment_keys {
         keys.extend_from_slice(&encode(key)?);
     }
-    Ok(hash::hash_to_scalar::<B>(
+    Ok(B::hash_to_scalar(
         CTX,
         &[statement, &keys, root, b"IssuerProof"],
     ))
@@ -634,7 +634,7 @@ pub(crate) fn redeem_with<B: Backend, R: Random>(
     let index = index as u16;
     let mut rand = Zeroizing::new([0u8; 2 * NSEED]);
     rng.fill(rand.as_mut());
-    let mut delta = hash::derive_scalars::<B>(CTX, &rand[..NSEED], b"delta", 1)?[0];
+    let mut delta = B::derive_scalars(CTX, &rand[..NSEED], b"delta", 1)?[0];
 
     // X_hat = anchor_set[index] + delta * B, selecting the key in constant
     // time so that `index` does not steer memory accesses.
@@ -717,10 +717,8 @@ fn prove_issuer<B: Backend>(
     let mut secret = [0u8; SCALAR_LENGTH + 2];
     secret[..SCALAR_LENGTH].copy_from_slice(&delta.to_bytes());
     secret[SCALAR_LENGTH..].copy_from_slice(&index.to_be_bytes());
-    let derived =
-        hash::derive_nonces::<B>(CTX, &secret, b"ProveIssuer", &[statement], rand, 2 * q + 1);
+    let derived = B::derive_nonces(CTX, &secret, b"ProveIssuer", &[statement], rand, 2 * q + 1)?;
     secret.zeroize();
-    let derived = derived?;
     let r = &derived[0];
     let trapdoors = &derived[1..=q];
     let first_openings = &derived[q + 1..];
@@ -851,7 +849,7 @@ pub(crate) fn context_base_for_tests<B: Backend>(ctx_iss: &[u8]) -> B::Point {
 
 #[cfg(test)]
 pub(crate) fn delta_for_tests<B: Backend>(rand: &[u8]) -> B::Scalar {
-    hash::derive_scalars::<B>(CTX, &rand[..NSEED], b"delta", 1)
+    B::derive_scalars(CTX, &rand[..NSEED], b"delta", 1)
         .map(|scalars| scalars[0])
         .unwrap_or_default()
 }

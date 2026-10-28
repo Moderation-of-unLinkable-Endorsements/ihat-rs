@@ -9,7 +9,7 @@ use crate::backend::{Backend, FIELD_MODULUS, POINT_LENGTH, Point, SCALAR_LENGTH,
 use crate::commitment::{
     Node, commit_val_at_place, depth, generate_vec_bind, hash_node, vec_commit, vec_equivocate,
 };
-use crate::hash::{self, XmdPrefix};
+use crate::hash::{self, BackendHashExt, XmdPrefix};
 use crate::permutation::{
     is_valid_permutation_encoding, p, p_inv, permutation_pair, permute_bytes, select_bytes,
     unpermute_bytes,
@@ -212,7 +212,7 @@ fn permutation_properties<B: Backend>() {
     assert!(!bool::from(is_valid_permutation_encoding::<B>(&encoding)));
 
     for i in 0..8u64 {
-        let secret = hash::hash_to_scalar::<B>(CTX, &[&i.to_be_bytes()]);
+        let secret = B::hash_to_scalar(CTX, &[&i.to_be_bytes()]);
         let t = B::Point::mul_generator(&secret);
         assert_eq!(p_inv::<B>(&p::<B>(&t).unwrap()).unwrap(), t);
         assert_eq!(p::<B>(&p_inv::<B>(&t).unwrap()).unwrap(), t);
@@ -230,42 +230,40 @@ fn permutation_properties<B: Backend>() {
 
 fn derivations<B: Backend>() {
     let rand = [1u8; 48];
-    let a = hash::derive_scalars::<B>(CTX, &rand, b"a", 3).unwrap();
-    let b = hash::derive_scalars::<B>(CTX, &rand, b"b", 3).unwrap();
+    let a = B::derive_scalars(CTX, &rand, b"a", 3).unwrap();
+    let b = B::derive_scalars(CTX, &rand, b"b", 3).unwrap();
     assert_eq!(a.len(), 3);
     for (x, y) in a.iter().zip(b.iter()) {
         assert_ne!(x.to_bytes(), y.to_bytes());
     }
     // The protocol context separates derivations.
-    let other = hash::derive_scalars::<B>(b"ACTv1-P256-SHA256", &rand, b"a", 3).unwrap();
+    let other = B::derive_scalars(b"ACTv1-P256-SHA256", &rand, b"a", 3).unwrap();
     assert_ne!(a[0].to_bytes(), other[0].to_bytes());
     let long = [1u8; 49];
     for wrong in [&long[..0], &long[..47], &long[..49]] {
         assert_eq!(
-            hash::derive_scalars::<B>(CTX, wrong, b"a", 1).unwrap_err(),
-            crate::Error::InvalidInput
+            B::derive_scalars(CTX, wrong, b"a", 1).unwrap_err(),
+            hash::Error::InvalidInput
         );
         assert_eq!(
-            hash::derive_nonces::<B>(CTX, b"secret", b"e", &[b"x"], wrong, 1).unwrap_err(),
-            crate::Error::InvalidInput
+            B::derive_nonces(CTX, b"secret", b"e", &[b"x"], wrong, 1).unwrap_err(),
+            hash::Error::InvalidInput
         );
     }
     let seed = [1u8; 48];
-    let split =
-        hash::derive_nonces::<B>(CTX, b"secret", b"e", &[b"inst", b"ance"], &seed, 2).unwrap();
-    let joined = hash::derive_nonces::<B>(CTX, b"secret", b"e", &[b"instance"], &seed, 2).unwrap();
+    let split = B::derive_nonces(CTX, b"secret", b"e", &[b"inst", b"ance"], &seed, 2).unwrap();
+    let joined = B::derive_nonces(CTX, b"secret", b"e", &[b"instance"], &seed, 2).unwrap();
     assert_eq!(split[1].to_bytes(), joined[1].to_bytes());
     // A changed byte of the randomness changes every nonce.
     let mut changed = seed;
     changed[47] ^= 1;
-    let others =
-        hash::derive_nonces::<B>(CTX, b"secret", b"e", &[b"instance"], &changed, 2).unwrap();
+    let others = B::derive_nonces(CTX, b"secret", b"e", &[b"instance"], &changed, 2).unwrap();
     for (x, y) in joined.iter().zip(others.iter()) {
         assert_ne!(x.to_bytes(), y.to_bytes());
     }
-    let key = hash::derive_key_scalar::<B>(CTX, &seed, b"GenerateKeyPair").unwrap();
+    let key = B::derive_key_scalar(CTX, &seed, b"GenerateKeyPair").unwrap();
     assert!(!bool::from(key.is_zero()));
-    assert!(hash::hash_to_group::<B>(CTX, &[b"x"]).is_ok());
+    assert!(B::hash_to_group(CTX, &[b"x"]).is_ok());
 }
 
 /// Three leaves take two levels. A third key, trapdoor, or opening would
@@ -351,6 +349,7 @@ mod parity {
     use crate::backend::boringssl::BoringSsl;
     use crate::backend::rustcrypto::RustCrypto;
     use crate::backend::{Point, Scalar};
+    use crate::hash::BackendHashExt;
     use crate::tests::{os_rng, random_key};
     use crate::{PublicKey, SecretKey};
 
@@ -358,14 +357,14 @@ mod parity {
     fn hashes_agree() {
         for msg in [&b""[..], b"ctx", &[7u8; 300]] {
             assert_eq!(
-                crate::hash::hash_to_scalar::<RustCrypto>(super::CTX, &[msg]).to_bytes(),
-                crate::hash::hash_to_scalar::<BoringSsl>(super::CTX, &[msg]).to_bytes()
+                RustCrypto::hash_to_scalar(super::CTX, &[msg]).to_bytes(),
+                BoringSsl::hash_to_scalar(super::CTX, &[msg]).to_bytes()
             );
             assert_eq!(
-                crate::hash::hash_to_group::<RustCrypto>(super::CTX, &[msg])
+                RustCrypto::hash_to_group(super::CTX, &[msg])
                     .unwrap()
                     .to_bytes(),
-                crate::hash::hash_to_group::<BoringSsl>(super::CTX, &[msg])
+                BoringSsl::hash_to_group(super::CTX, &[msg])
                     .unwrap()
                     .to_bytes()
             );

@@ -14,7 +14,7 @@ use subtle::{Choice, ConditionallySelectable, ConstantTimeEq};
 use zeroize::{Zeroize, Zeroizing};
 
 use crate::backend::{Backend, POINT_LENGTH, Point};
-use crate::hash;
+use crate::hash::BackendHashExt;
 use crate::permutation;
 use crate::{Error, PROTOCOL_CONTEXT};
 
@@ -29,7 +29,7 @@ pub(crate) fn depth(n: usize) -> usize {
 
 /// `G.HashToScalar(value)`.
 pub(crate) fn hash_node<B: Backend>(value: &[u8]) -> B::Scalar {
-    hash::hash_to_scalar::<B>(PROTOCOL_CONTEXT, &[value])
+    B::hash_to_scalar(PROTOCOL_CONTEXT, &[value])
 }
 
 /// A level's commitment key `Q`, with `P(Q)`.
