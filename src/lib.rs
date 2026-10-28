@@ -100,7 +100,7 @@ compile_error!("enable at least one backend feature: `rustcrypto` or `boringssl`
 
 pub mod backend;
 mod commitment;
-mod hash;
+pub mod hash;
 mod permutation;
 mod protocol;
 mod random;
@@ -166,6 +166,15 @@ pub enum Error {
     /// (`ValueError`), for instance a context longer than `2^16 - 1` bytes
     /// or an index outside the Anchor Set.
     InvalidInput,
+}
+
+impl From<hash::Error> for Error {
+    fn from(error: hash::Error) -> Self {
+        match error {
+            hash::Error::InvalidInput => Self::InvalidInput,
+            hash::Error::Derive => Self::Derive,
+        }
+    }
 }
 
 impl fmt::Display for Error {

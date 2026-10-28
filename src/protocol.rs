@@ -261,6 +261,7 @@ pub(crate) fn point_bytes<P: Point>(point: &P) -> [u8; POINT_LENGTH] {
 /// `CreateContextBase(ctx_iss)`.
 fn context_base<B: Backend>(ctx_iss: &[u8]) -> Result<B::Point, Error> {
     hash::hash_to_group::<B>(CTX, &[&u16_prefix(ctx_iss)?, ctx_iss, b"ContextBase"])
+        .map_err(Into::into)
 }
 
 /// Checks that `Message(nf, ctx_red)` can be length-prefixed.
@@ -718,9 +719,8 @@ fn prove_issuer<B: Backend>(
     secret[..SCALAR_LENGTH].copy_from_slice(&delta.to_bytes());
     secret[SCALAR_LENGTH..].copy_from_slice(&index.to_be_bytes());
     let derived =
-        hash::derive_nonces::<B>(CTX, &secret, b"ProveIssuer", &[statement], rand, 2 * q + 1);
+        hash::derive_nonces::<B>(CTX, &secret, b"ProveIssuer", &[statement], rand, 2 * q + 1)?;
     secret.zeroize();
-    let derived = derived?;
     let r = &derived[0];
     let trapdoors = &derived[1..=q];
     let first_openings = &derived[q + 1..];

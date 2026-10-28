@@ -243,11 +243,11 @@ fn derivations<B: Backend>() {
     for wrong in [&long[..0], &long[..47], &long[..49]] {
         assert_eq!(
             hash::derive_scalars::<B>(CTX, wrong, b"a", 1).unwrap_err(),
-            crate::Error::InvalidInput
+            hash::Error::InvalidInput
         );
         assert_eq!(
             hash::derive_nonces::<B>(CTX, b"secret", b"e", &[b"x"], wrong, 1).unwrap_err(),
-            crate::Error::InvalidInput
+            hash::Error::InvalidInput
         );
     }
     let seed = [1u8; 48];
