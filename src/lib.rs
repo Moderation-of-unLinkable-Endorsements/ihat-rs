@@ -164,6 +164,8 @@ pub enum Error {
     /// (`ValueError`), for instance a context longer than `2^16 - 1` bytes
     /// or an index outside the Anchor Set.
     InvalidInput,
+    /// The system random number generator is unavailable.
+    Entropy,
 }
 
 impl fmt::Display for Error {
@@ -173,6 +175,7 @@ impl fmt::Display for Error {
             Error::Verify => "verification failed",
             Error::Derive => "derivation failed to produce a usable scalar",
             Error::InvalidInput => "input has an invalid length or value",
+            Error::Entropy => "the system random number generator failed",
         })
     }
 }

@@ -60,7 +60,7 @@ impl Replay {
 }
 
 impl Random for Replay {
-    fn fill(&mut self, buf: &mut [u8]) {
+    fn fill(&mut self, buf: &mut [u8]) -> Result<(), crate::Error> {
         let end = self.offset + buf.len();
         assert!(
             end <= self.data.len(),
@@ -70,6 +70,7 @@ impl Random for Replay {
         );
         buf.copy_from_slice(&self.data[self.offset..end]);
         self.offset = end;
+        Ok(())
     }
 }
 
