@@ -10,7 +10,7 @@ fn client(bytes: &[u8]) -> bool {
 
 #[test]
 fn restored_continuations_complete_and_reject_malformed_blobs() {
-    let key: SecretKey = SecretKey::from_seed(&DefaultBackend::generate_seed()).unwrap();
+    let key: SecretKey = SecretKey::from_seed(&DefaultBackend::generate_seed().unwrap()).unwrap();
     let (anchor_state, commitment) = ec_ihat::commit(b"epoch").unwrap();
     let (client_state, challenge) =
         ec_ihat::challenge(&key.public_key(), b"epoch", b"scope", &commitment).unwrap();

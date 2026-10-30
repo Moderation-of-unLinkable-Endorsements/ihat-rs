@@ -60,7 +60,7 @@ impl Replay {
 }
 
 impl Random for Replay {
-    fn fill(&mut self, buf: &mut [u8]) {
+    fn fill(&mut self, buf: &mut [u8]) -> Result<(), crate::Error> {
         let end = self.offset + buf.len();
         assert!(
             end <= self.data.len(),
@@ -70,6 +70,7 @@ impl Random for Replay {
         );
         buf.copy_from_slice(&self.data[self.offset..end]);
         self.offset = end;
+        Ok(())
     }
 }
 
@@ -82,6 +83,6 @@ pub(crate) fn os_rng<B: crate::Backend>() -> crate::random::SystemRandom<B> {
 /// A key derived from a seed drawn from `rng`.
 pub(crate) fn random_key<B: crate::Backend>(rng: &mut impl Random) -> crate::SecretKey<B> {
     let mut seed = [0u8; crate::SEED_LENGTH];
-    rng.fill(&mut seed);
+    rng.fill(&mut seed).unwrap();
     crate::SecretKey::from_seed(&seed).unwrap()
 }

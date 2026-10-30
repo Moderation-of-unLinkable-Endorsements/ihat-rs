@@ -16,6 +16,7 @@
 
 use core::marker::PhantomData;
 
+use crate::Error;
 use crate::backend::Backend;
 
 /// Serves the bytes that `random(n)` returns.
@@ -25,7 +26,7 @@ use crate::backend::Backend;
 /// rely on this.
 pub(crate) trait Random {
     /// Fills `buf` with the next bytes.
-    fn fill(&mut self, buf: &mut [u8]);
+    fn fill(&mut self, buf: &mut [u8]) -> Result<(), Error>;
 }
 
 /// The operating system's random number generator, through the backend.
@@ -38,7 +39,7 @@ impl<B: Backend> SystemRandom<B> {
 }
 
 impl<B: Backend> Random for SystemRandom<B> {
-    fn fill(&mut self, buf: &mut [u8]) {
-        B::random_bytes(buf);
+    fn fill(&mut self, buf: &mut [u8]) -> Result<(), Error> {
+        B::random_bytes(buf)
     }
 }

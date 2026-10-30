@@ -21,7 +21,7 @@
 //!
 //! // The Anchor derives its key pair from a secret random seed, which it
 //! // keeps in order to restore the key, and publishes the public key.
-//! let secret_key_seed = DefaultBackend::generate_seed();
+//! let secret_key_seed = DefaultBackend::generate_seed()?;
 //! let secret_key: SecretKey = SecretKey::from_seed(&secret_key_seed)?;
 //! let public_key = secret_key.public_key();
 //! let ctx_iss = b"epoch-42";
@@ -37,7 +37,7 @@
 //!
 //! // Redemption: the Moderator accepts Endorsements from any Anchor in its
 //! // Anchor Set; the Client proves its Anchor is one of them.
-//! let other: PublicKey = SecretKey::from_seed(&DefaultBackend::generate_seed())?.public_key();
+//! let other: PublicKey = SecretKey::from_seed(&*DefaultBackend::generate_seed()?)?.public_key();
 //! let anchor_set = [other, public_key];
 //! let challenge_digest = b"moderator challenge";
 //! let redemption =
@@ -166,6 +166,8 @@ pub enum Error {
     /// (`ValueError`), for instance a context longer than `2^16 - 1` bytes
     /// or an index outside the Anchor Set.
     InvalidInput,
+    /// The system random number generator is unavailable.
+    Entropy,
 }
 
 impl fmt::Display for Error {
@@ -175,6 +177,7 @@ impl fmt::Display for Error {
             Error::Verify => "verification failed",
             Error::Derive => "derivation failed to produce a usable scalar",
             Error::InvalidInput => "input has an invalid length or value",
+            Error::Entropy => "the system random number generator failed",
         })
     }
 }

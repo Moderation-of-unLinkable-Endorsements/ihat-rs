@@ -225,13 +225,14 @@ pub trait Backend: 'static + Copy + Debug + Default + PartialEq + Eq + Send + Sy
     fn hash_to_curve(msg: &[&[u8]], dst: &[&[u8]]) -> Option<Self::Point>;
 
     /// Fills `buf` from the operating system's cryptographic random number
-    /// generator, aborting the process if it is unavailable.
-    fn random_bytes(buf: &mut [u8]);
+    /// generator, returning [`Error::Entropy`](crate::Error::Entropy) if it
+    /// is unavailable.
+    fn random_bytes(buf: &mut [u8]) -> Result<(), crate::Error>;
 
     /// A fresh seed for [`SecretKey::from_seed`](crate::SecretKey::from_seed).
-    fn generate_seed() -> Zeroizing<[u8; SEED_LENGTH]> {
+    fn generate_seed() -> Result<Zeroizing<[u8; SEED_LENGTH]>, crate::Error> {
         let mut seed = Zeroizing::new([0u8; SEED_LENGTH]);
-        Self::random_bytes(seed.as_mut());
-        seed
+        Self::random_bytes(seed.as_mut())?;
+        Ok(seed)
     }
 }

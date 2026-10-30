@@ -13,7 +13,7 @@ fn main() -> Result<(), ec_ihat::Error> {
 
     // Eight Anchors; the Moderator accepts Endorsements from any of them.
     let anchors: Vec<SecretKey> = (0..8)
-        .map(|_| SecretKey::from_seed(&DefaultBackend::generate_seed()))
+        .map(|_| SecretKey::from_seed(&*DefaultBackend::generate_seed()?))
         .collect::<Result<_, _>>()?;
     let anchor_set: Vec<PublicKey> = anchors.iter().map(SecretKey::public_key).collect();
 
