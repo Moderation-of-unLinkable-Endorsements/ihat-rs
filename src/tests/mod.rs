@@ -39,6 +39,29 @@ mod primitives;
 mod protocol;
 mod vectors;
 
+#[test]
+fn errors_display_distinct_messages() {
+    use crate::Error;
+
+    let errors = [
+        Error::Deserialize,
+        Error::Verify,
+        Error::Derive,
+        Error::Amount,
+        Error::InvalidInput,
+        Error::Entropy,
+    ];
+    let messages: Vec<_> = errors
+        .iter()
+        .map(|error| alloc::format!("{error}"))
+        .collect();
+    for (i, message) in messages.iter().enumerate() {
+        assert!(!message.is_empty(), "empty message for {:?}", errors[i]);
+        assert!(!messages[..i].contains(message), "duplicate error message");
+    }
+    assert_eq!(messages[5], "the system random number generator failed");
+}
+
 /// Serves `random` from a recorded byte string.
 pub(crate) struct Replay {
     data: Vec<u8>,
@@ -65,7 +88,7 @@ impl Replay {
 }
 
 impl Random for Replay {
-    fn fill(&mut self, buf: &mut [u8]) {
+    fn fill(&mut self, buf: &mut [u8]) -> Result<(), crate::Error> {
         let end = self.offset + buf.len();
         assert!(
             end <= self.data.len(),
@@ -75,6 +98,7 @@ impl Random for Replay {
         );
         buf.copy_from_slice(&self.data[self.offset..end]);
         self.offset = end;
+        Ok(())
     }
 }
 

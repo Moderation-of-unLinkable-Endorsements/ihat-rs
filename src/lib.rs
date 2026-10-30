@@ -176,6 +176,8 @@ pub enum Error {
     /// An input has an invalid length or is outside its permitted range
     /// (`ValueError`), for instance a context longer than `2^16 - 1` bytes.
     InvalidInput,
+    /// The system random number generator is unavailable.
+    Entropy,
 }
 
 impl fmt::Display for Error {
@@ -186,6 +188,7 @@ impl fmt::Display for Error {
             Error::Derive => "derivation failed to produce a usable scalar",
             Error::Amount => "amount is outside the permitted range",
             Error::InvalidInput => "input has an invalid length or value",
+            Error::Entropy => "the system random number generator failed",
         })
     }
 }

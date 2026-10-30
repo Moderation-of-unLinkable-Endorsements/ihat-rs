@@ -669,7 +669,22 @@ fn credentials_zeroize<B: Backend>() {
     let _ = B::Scalar::default();
 }
 
+fn entropy_failure_is_an_error<B: Backend>() {
+    struct Failing;
+    impl crate::random::Random for Failing {
+        fn fill(&mut self, _: &mut [u8]) -> Result<(), Error> {
+            Err(Error::Entropy)
+        }
+    }
+    let params = Params::<B>::new(4).unwrap();
+    assert!(matches!(
+        issue_request_with(&params, &mut Failing),
+        Err(Error::Entropy)
+    ));
+}
+
 backend_tests!(
+    entropy_failure_is_an_error,
     full_flow,
     contexts_are_bound,
     refunds_are_bound_to_their_spend,

@@ -135,7 +135,7 @@ impl<B: Backend> SecretKey<B> {
 
     pub(crate) fn generate_with<R: Random>(rng: &mut R) -> Result<Self, Error> {
         let mut seed = [0u8; NSEED];
-        rng.fill(&mut seed);
+        rng.fill(&mut seed)?;
         let key = Self::from_seed(&seed, b"GenerateKeyPair");
         seed.zeroize();
         key
@@ -485,7 +485,7 @@ fn signing_exponent<B: Backend, R: Random>(
     let x_a_bytes = x_a.to_bytes().ok_or(Error::Verify)?;
     let label_len = u16::try_from(label.len()).map_err(|_| Error::InvalidInput)?;
     let mut rand = Zeroizing::new([0u8; NSEED]);
-    rng.fill(&mut *rand);
+    rng.fill(&mut *rand)?;
     let sk_bytes = Zeroizing::new(key.sk.to_bytes());
     let derived = hash::derive_nonces::<B>(
         &*sk_bytes,
@@ -645,7 +645,7 @@ pub(crate) fn issue_request_with<B: Backend, R: Random>(
 ) -> Result<(ClientIssuanceState<B>, IssueRequestMessage<B>), Error> {
     let gens = &params.gens;
     let mut rand = Zeroizing::new([0u8; NSEED]);
-    rng.fill(&mut *rand);
+    rng.fill(&mut *rand)?;
     // `derived` holds `(k, r)` and is wiped on every return.
     let derived = hash::derive_scalars::<B>(&*rand, b"IssueRequest", 2)?;
     drop(rand);
@@ -806,7 +806,7 @@ pub(crate) fn prove_spend_with<B: Backend, R: Random>(
     // one for the commitment of a refresh.
     let count = 4 + if refresh { 1 } else { n };
     let mut rand = Zeroizing::new([0u8; NSEED]);
-    rng.fill(&mut *rand);
+    rng.fill(&mut *rand)?;
     // `derived` holds every secret scalar of the spend and is wiped on every
     // return; the values computed from them below are held in wrappers that
     // wipe them on drop.

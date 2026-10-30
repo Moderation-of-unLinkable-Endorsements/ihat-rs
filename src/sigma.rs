@@ -252,7 +252,7 @@ fn prover_nonces<B: Backend, R: Random>(
         bytes.zeroize();
     }
     let mut rand = Zeroizing::new([0u8; NSEED]);
-    rng.fill(rand.as_mut());
+    rng.fill(rand.as_mut())?;
     // The instance is `session_id || I2OSP(len(relation), 4) || relation`.
     hash::derive_nonces::<B>(
         &secret,
