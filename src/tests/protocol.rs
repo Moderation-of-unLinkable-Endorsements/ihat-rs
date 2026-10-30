@@ -564,6 +564,7 @@ fn errors_display_distinct_messages() {
         Error::Verify,
         Error::Derive,
         Error::InvalidInput,
+        Error::Entropy,
     ];
     let messages: Vec<_> = errors
         .iter()
@@ -576,7 +577,21 @@ fn errors_display_distinct_messages() {
     assert_eq!(messages[1], "verification failed");
 }
 
+fn entropy_failure_is_an_error<B: Backend>() {
+    struct Failing;
+    impl crate::random::Random for Failing {
+        fn fill(&mut self, _: &mut [u8]) -> Result<(), Error> {
+            Err(Error::Entropy)
+        }
+    }
+    assert!(matches!(
+        commit_with::<B, _>(CTX_ISS, &mut Failing),
+        Err(Error::Entropy)
+    ));
+}
+
 backend_tests!(
+    entropy_failure_is_an_error,
     issue_and_redeem_everywhere,
     redemption_rejections,
     redemption_is_deterministic,

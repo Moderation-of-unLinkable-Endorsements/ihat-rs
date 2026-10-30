@@ -211,6 +211,7 @@ pub trait Backend: 'static + Copy + Debug + Default + PartialEq + Eq + Send + Sy
     fn hash_to_curve(msg: &[&[u8]], dst: &[&[u8]]) -> Option<Self::Point>;
 
     /// Fills `buf` from the operating system's cryptographic random number
-    /// generator, aborting the process if it is unavailable.
-    fn random_bytes(buf: &mut [u8]);
+    /// generator, returning [`Error::Entropy`](crate::Error::Entropy) if it
+    /// is unavailable.
+    fn random_bytes(buf: &mut [u8]) -> Result<(), crate::Error>;
 }

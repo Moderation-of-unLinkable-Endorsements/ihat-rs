@@ -796,14 +796,17 @@ impl super::Backend for BoringSsl {
         Some(point)
     }
 
-    fn random_bytes(buf: &mut [u8]) {
+    fn random_bytes(buf: &mut [u8]) -> Result<(), crate::Error> {
         if buf.is_empty() {
-            return;
+            return Ok(());
         }
         // SAFETY: `buf` is a valid buffer of its length. `RAND_bytes` returns
         // 1 or aborts the process.
         let ret = unsafe { bssl_sys::RAND_bytes(buf.as_mut_ptr(), buf.len()) };
-        assert_eq!(ret, 1);
+        if ret != 1 {
+            return Err(crate::Error::Entropy);
+        }
+        Ok(())
     }
 }
 

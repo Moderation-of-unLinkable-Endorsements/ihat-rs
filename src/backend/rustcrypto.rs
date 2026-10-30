@@ -155,10 +155,7 @@ impl super::Backend for RustCrypto {
         hash_from_bytes::<NistP256, ExpandMsgXmd<sha2::Sha256>>(msg, dst).ok()
     }
 
-    #[allow(clippy::expect_used)]
-    fn random_bytes(buf: &mut [u8]) {
-        // An unavailable system random number generator is unrecoverable
-        // for this protocol: every secret is derived from its output.
-        getrandom::fill(buf).expect("the operating system random number generator failed");
+    fn random_bytes(buf: &mut [u8]) -> Result<(), crate::Error> {
+        getrandom::fill(buf).map_err(|_| crate::Error::Entropy)
     }
 }
