@@ -17,6 +17,18 @@ use crate::permutation::{
 
 const CTX: &[u8] = crate::PROTOCOL_CONTEXT;
 
+#[test]
+fn hash_errors_display_messages() {
+    assert_eq!(
+        alloc::format!("{}", hash::Error::InvalidInput),
+        "input has an invalid length or count"
+    );
+    assert_eq!(
+        alloc::format!("{}", hash::Error::Derive),
+        "derivation failed to produce a usable scalar or group element"
+    );
+}
+
 /// RFC 9380, Appendix K.1: `expand_message_xmd(SHA-256)`.
 fn expand_message_xmd_vectors<B: Backend>() {
     const DST: &[u8] = b"QUUX-V01-CS02-with-expander-SHA256-128";
