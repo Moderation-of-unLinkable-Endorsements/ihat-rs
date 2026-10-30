@@ -324,7 +324,7 @@ pub(crate) fn commit_with<B: Backend, R: Random>(
 ) -> Result<(AnchorState<B>, CommitMessage<B>), Error> {
     let z = context_base::<B>(ctx_iss)?;
     let mut rand = [0u8; NSEED];
-    rng.fill(&mut rand);
+    rng.fill(&mut rand)?;
     let derived = hash::derive_scalars::<B>(CTX, &rand, b"Commit", 3);
     rand.zeroize();
     let derived = derived?;
@@ -370,7 +370,7 @@ pub(crate) fn challenge_with<B: Backend, R: Random>(
     u16_prefix(ctx_iss)?;
     check_redemption_context(ctx_red)?;
     let mut rand = Zeroizing::new([0u8; NULLIFIER_LENGTH + NSEED]);
-    rng.fill(rand.as_mut());
+    rng.fill(rand.as_mut())?;
     let derived = hash::derive_scalars::<B>(CTX, &rand[NULLIFIER_LENGTH..], b"Challenge", 4)?;
     let mut state = ClientState::<B> {
         nf: [0; NULLIFIER_LENGTH],
@@ -633,7 +633,7 @@ pub(crate) fn redeem_with<B: Backend, R: Random>(
     }
     let index = index as u16;
     let mut rand = Zeroizing::new([0u8; 2 * NSEED]);
-    rng.fill(rand.as_mut());
+    rng.fill(rand.as_mut())?;
     let mut delta = hash::derive_scalars::<B>(CTX, &rand[..NSEED], b"delta", 1)?[0];
 
     // X_hat = anchor_set[index] + delta * B, selecting the key in constant
