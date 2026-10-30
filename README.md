@@ -21,9 +21,10 @@ byte.
 ## Usage
 
 ```rust
-use ec_ihat::{PublicKey, SecretKey};
+use ec_ihat::{Backend, DefaultBackend, PublicKey, SecretKey};
 
-let secret_key: SecretKey = SecretKey::generate()?;  // Anchor
+let secret_key_seed = DefaultBackend::generate_seed();
+let secret_key: SecretKey = SecretKey::from_seed(&secret_key_seed)?;
 let public_key = secret_key.public_key();            // published
 let ctx_iss = b"epoch-42";                           // agreed out of band
 let ctx_red = b"moderator.example";                  // chosen by the Client
@@ -37,7 +38,7 @@ let endorsement = ec_ihat::finalize(&public_key, client_state, &response)?;
 
 // Redemption against the Moderator's Anchor Set, in which this Anchor's key
 // is at index 1.
-let other: PublicKey = SecretKey::generate()?.public_key();
+let other: PublicKey = SecretKey::from_seed(&DefaultBackend::generate_seed())?.public_key();
 let anchor_set = [other, public_key];
 let digest = b"moderator challenge digest";
 let redemption = ec_ihat::redeem(&anchor_set, 1, endorsement, ctx_iss, ctx_red, digest)?;
