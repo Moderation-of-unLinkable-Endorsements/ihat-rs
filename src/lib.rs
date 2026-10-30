@@ -27,7 +27,7 @@
 //!
 //! // Issuance: the Anchor commits, the Client challenges, the Anchor
 //! // responds, and the Client finalizes an Endorsement.
-//! let (anchor_state, commitment) = ec_ihat::commit(ctx_iss, b"session-1")?;
+//! let (anchor_state, commitment) = ec_ihat::commit(ctx_iss)?;
 //! let (client_state, challenge) =
 //!     ec_ihat::challenge(&public_key, ctx_iss, ctx_red, &commitment)?;
 //! let response = ec_ihat::respond(&secret_key, anchor_state, &challenge)?;
@@ -157,9 +157,6 @@ pub enum Error {
     Deserialize,
     /// A received value failed a verification check (`VerifyError`).
     Verify,
-    /// A message does not belong to the session whose state it was given
-    /// (`SessionError`).
-    Session,
     /// A deterministic derivation failed to produce a usable scalar
     /// (`DeriveError`). This has negligible probability.
     Derive,
@@ -174,7 +171,6 @@ impl fmt::Display for Error {
         f.write_str(match self {
             Error::Deserialize => "byte string is not a canonical encoding",
             Error::Verify => "verification failed",
-            Error::Session => "message does not belong to this session",
             Error::Derive => "derivation failed to produce a usable scalar",
             Error::InvalidInput => "input has an invalid length or value",
         })
