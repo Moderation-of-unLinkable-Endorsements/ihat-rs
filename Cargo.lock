@@ -61,15 +61,10 @@ dependencies = [
 ]
 
 [[package]]
-name = "bssl-macros"
-version = "0.1.0"
-
-[[package]]
 name = "bssl-sys"
 version = "0.1.0"
-dependencies = [
- "bssl-macros",
-]
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "312d12393c060384f2e6ed14c7b4be37b3dd90249857485613c1a91b9a1abb5c"
 
 [[package]]
 name = "bumpalo"
