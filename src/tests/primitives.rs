@@ -2,10 +2,10 @@
 
 use alloc::vec::Vec;
 
-use subtle::Choice;
+use subtle::{Choice, ConditionallySelectable};
 
 use crate::Error;
-use crate::backend::{Backend, FIELD_MODULUS, POINT_LENGTH, Point, SCALAR_LENGTH, Scalar};
+use crate::backend::{Backend, FIELD_MODULUS, ORDER, POINT_LENGTH, Point, SCALAR_LENGTH, Scalar};
 use crate::commitment::{
     Node, commit_val_at_place, depth, generate_vec_bind, hash_node, vec_commit, vec_equivocate,
 };
@@ -149,6 +149,74 @@ fn decodes<B: Backend>(x: &[u8; SCALAR_LENGTH]) -> bool {
     bool::from(B::Point::from_bytes(&bytes).is_some())
 }
 
+/// `x` as a big-endian field-sized integer.
+fn small_x(x: u8) -> [u8; SCALAR_LENGTH] {
+    let mut out = [0u8; SCALAR_LENGTH];
+    out[SCALAR_LENGTH - 1] = x;
+    out
+}
+
+/// `x + p`, for `x` below `2^256 - p`.
+fn plus_modulus(x: &[u8; SCALAR_LENGTH]) -> [u8; SCALAR_LENGTH] {
+    let mut out = *x;
+    let mut carry = 0u16;
+    for i in (0..SCALAR_LENGTH).rev() {
+        let sum = u16::from(out[i]) + u16::from(FIELD_MODULUS[i]) + carry;
+        out[i] = sum as u8;
+        carry = sum >> 8;
+    }
+    assert_eq!(carry, 0);
+    out
+}
+
+/// `p - k`, for `k` at most the low byte of the field modulus, `0xff`.
+fn modulus_minus(k: u8) -> [u8; SCALAR_LENGTH] {
+    let mut out = FIELD_MODULUS;
+    out[SCALAR_LENGTH - 1] -= k;
+    out
+}
+
+/// Known answers for the x-coordinate test, computed independently of
+/// either backend (and checked against the draft's
+/// `IsValidPermutationEncoding`). Unlike `x_coordinate_test`, these do not
+/// consult point decoding, which for `p256` shares its code with the test.
+fn x_coordinate_known_answers<B: Backend>() {
+    let is_x = |x: &[u8; SCALAR_LENGTH]| bool::from(B::Point::is_x_coordinate(x));
+
+    // `x^3 - 3x + b` is a square: the coordinates below 18, the largest
+    // coordinate below p, and the generator's.
+    let g = B::Point::generator().to_bytes().unwrap();
+    let mut accepted: Vec<[u8; SCALAR_LENGTH]> = [0, 5, 6, 8, 9, 12, 13, 17].map(small_x).to_vec();
+    accepted.push(modulus_minus(3));
+    accepted.push(g[1..].try_into().unwrap());
+    for x in &accepted {
+        assert!(is_x(x), "{x:02x?} should be a coordinate");
+    }
+
+    // In range, but `x^3 - 3x + b` is not a square.
+    let mut rejected: Vec<[u8; SCALAR_LENGTH]> =
+        [1, 2, 3, 4, 7, 10, 11, 14, 15, 16].map(small_x).to_vec();
+    rejected.extend([modulus_minus(1), modulus_minus(2)]);
+    let mut half = [0u8; SCALAR_LENGTH];
+    half[0] = 0x80;
+    let mut order_minus_one = ORDER;
+    order_minus_one[SCALAR_LENGTH - 1] -= 1;
+    rejected.extend([half, ORDER, order_minus_one]);
+
+    // Not below p, including `x + p` for coordinates `x`, which agree with
+    // a coordinate modulo p and must not be reduced.
+    let mut p_plus_one = FIELD_MODULUS;
+    p_plus_one[20..].fill(0);
+    p_plus_one[19] = 1;
+    rejected.extend([FIELD_MODULUS, p_plus_one, [0xff; SCALAR_LENGTH]]);
+    for x in [0, 5, 6, 8, 9] {
+        rejected.push(plus_modulus(&small_x(x)));
+    }
+    for x in &rejected {
+        assert!(!is_x(x), "{x:02x?} should not be a coordinate");
+    }
+}
+
 /// The x-coordinate test agrees with point decoding, including at and
 /// beyond the field modulus.
 fn x_coordinate_test<B: Backend>() {
@@ -167,18 +235,10 @@ fn x_coordinate_test<B: Backend>() {
     above[19] = 1;
     cases.push(above);
     // x and x + p, where x is a coordinate below 2^256 - p.
-    let mut small = [0u8; SCALAR_LENGTH];
-    small[SCALAR_LENGTH - 1] = 3;
-    let mut wrapped = small;
-    let mut carry = 0u16;
-    for i in (0..SCALAR_LENGTH).rev() {
-        let sum = u16::from(wrapped[i]) + u16::from(FIELD_MODULUS[i]) + carry;
-        wrapped[i] = sum as u8;
-        carry = sum >> 8;
-    }
-    assert_eq!(carry, 0);
+    let small = small_x(5);
+    assert!(decodes::<B>(&small));
     cases.push(small);
-    cases.push(wrapped);
+    cases.push(plus_modulus(&small));
     let mut one = [0; SCALAR_LENGTH];
     one[SCALAR_LENGTH - 1] = 1;
     cases.push(one);
@@ -200,6 +260,155 @@ fn x_coordinate_test<B: Backend>() {
     assert!(bool::from(B::Point::is_x_coordinate(
         g[1..].try_into().unwrap()
     )));
+}
+
+/// `ORDER - k`, for `k` at most the low byte of the order, `0x51`.
+fn order_minus(k: u8) -> [u8; SCALAR_LENGTH] {
+    let mut out = ORDER;
+    out[SCALAR_LENGTH - 1] -= k;
+    out
+}
+
+/// Small values, values just below the order, and hashed values, on which
+/// the arithmetic identities below are checked pairwise.
+fn sample_scalars<B: Backend>() -> Vec<B::Scalar> {
+    let mut scalars: Vec<B::Scalar> = [0, 1, 2, 3, u64::MAX]
+        .into_iter()
+        .map(B::Scalar::from)
+        .collect();
+    for k in [1, 2, 3] {
+        scalars.push(B::Scalar::from_bytes(&order_minus(k)).unwrap());
+    }
+    for i in 0..8u64 {
+        scalars.push(B::hash_to_scalar(CTX, &[b"sample", &i.to_be_bytes()]));
+    }
+    scalars
+}
+
+fn scalar_arithmetic<B: Backend>() {
+    let bytes = |s: B::Scalar| s.to_bytes();
+    let zero = B::Scalar::default();
+    let one = B::Scalar::from(1);
+    let max = B::Scalar::from_bytes(&order_minus(1)).unwrap();
+
+    // Canonical encodings are exactly those below the order.
+    for k in [1, 2, 0x51] {
+        let encoding = order_minus(k);
+        assert_eq!(
+            B::Scalar::from_bytes(&encoding).unwrap().to_bytes(),
+            encoding
+        );
+    }
+    let mut above = ORDER;
+    above[SCALAR_LENGTH - 1] += 1;
+    for encoding in [ORDER, above, [0xff; SCALAR_LENGTH]] {
+        assert!(bool::from(B::Scalar::from_bytes(&encoding).is_none()));
+    }
+    let mut expected = [0u8; SCALAR_LENGTH];
+    expected[SCALAR_LENGTH - 8..].fill(0xff);
+    assert_eq!(B::Scalar::from(u64::MAX).to_bytes(), expected);
+    assert_eq!(bytes(zero), [0; SCALAR_LENGTH]);
+    assert!(bool::from(zero.is_zero()) && !bool::from(one.is_zero()));
+
+    // Reduction at the boundary of the order.
+    assert_eq!(bytes(max + one), bytes(zero));
+    assert_eq!(bytes(max + max), order_minus(2));
+    assert_eq!(bytes(zero - one), bytes(max));
+    assert_eq!(bytes(one - max), bytes(B::Scalar::from(2)));
+    assert_eq!(bytes(-zero), bytes(zero));
+    assert_eq!(bytes(-one), bytes(max));
+    assert_eq!(bytes(max * max), bytes(one));
+    assert_eq!(
+        bytes(B::Scalar::from(u64::MAX) * B::Scalar::from(u64::MAX)),
+        {
+            // (2^64 - 1)^2 = 2^128 - 2^65 + 1, which is below the order.
+            let mut square = [0u8; SCALAR_LENGTH];
+            square[16..24].copy_from_slice(&(u64::MAX - 1).to_be_bytes());
+            square[31] = 1;
+            square
+        }
+    );
+
+    // Inversion.
+    assert!(bool::from(zero.invert().is_none()));
+    assert_eq!(bytes(one.invert().unwrap()), bytes(one));
+    assert_eq!(bytes(max.invert().unwrap()), bytes(max));
+
+    let scalars = sample_scalars::<B>();
+    for &a in &scalars {
+        assert_eq!(bytes(a + zero), bytes(a));
+        assert_eq!(bytes(a * one), bytes(a));
+        assert_eq!(bytes(a * zero), bytes(zero));
+        assert_eq!(bytes(-a + a), bytes(zero));
+        assert_eq!(bytes(-(-a)), bytes(a));
+        assert_eq!(bytes(a * max), bytes(-a));
+        if !bool::from(a.is_zero()) {
+            let inverse = a.invert().unwrap();
+            assert_eq!(bytes(a * inverse), bytes(one), "{a:?}");
+            assert_eq!(bytes(inverse.invert().unwrap()), bytes(a));
+        }
+        for &b in &scalars {
+            assert_eq!(bytes(a + b), bytes(b + a));
+            assert_eq!(bytes(a * b), bytes(b * a));
+            assert_eq!(bytes(a + b - b), bytes(a));
+            assert_eq!(bytes(a - b), bytes(a + -b));
+            assert_eq!(bytes(-(a - b)), bytes(b - a));
+            for &c in &scalars[..6] {
+                assert_eq!(bytes(a * (b + c)), bytes(a * b + a * c));
+                assert_eq!(bytes((a * b) * c), bytes(a * (b * c)));
+            }
+        }
+    }
+
+    for choice in [0, 1] {
+        let selected = B::Scalar::conditional_select(&one, &max, Choice::from(choice));
+        assert_eq!(bytes(selected), bytes(if choice == 1 { max } else { one }));
+    }
+}
+
+/// Scalar multiplication agrees with scalar arithmetic, and point addition
+/// with doubling and the identity.
+fn point_scalar_consistency<B: Backend>() {
+    let g = B::Point::generator();
+    let identity = B::Point::identity();
+    let zero = B::Scalar::default();
+    let max = B::Scalar::from_bytes(&order_minus(1)).unwrap();
+
+    assert!(bool::from(B::Point::mul_generator(&zero).is_identity()));
+    assert!(bool::from(g.mul(&zero).is_identity()));
+    assert_eq!(B::Point::mul_generator(&max), g.neg());
+    assert_eq!(identity.double(), identity);
+    assert_eq!(identity.add(&identity), identity);
+    assert!(identity.to_bytes().is_none());
+
+    let scalars = sample_scalars::<B>();
+    for &a in &scalars {
+        let a_g = B::Point::mul_generator(&a);
+        assert_eq!(a_g, g.mul(&a), "{a:?}");
+        assert_eq!(identity.mul(&a), identity);
+        assert_eq!(a_g.add(&identity), a_g);
+        assert_eq!(identity.add(&a_g), a_g);
+        // Equal operands take the doubling path of point addition.
+        assert_eq!(a_g.add(&a_g), a_g.double());
+        assert_eq!(a_g.double(), B::Point::mul_generator(&(a + a)));
+        assert!(bool::from(a_g.sub(&a_g).is_identity()));
+        assert_eq!(a_g.neg(), B::Point::mul_generator(&-a));
+        if let Some(encoding) = a_g.to_bytes() {
+            assert_eq!(B::Point::from_bytes(&encoding).unwrap(), a_g);
+        } else {
+            assert!(bool::from(a.is_zero()));
+        }
+        for &b in &scalars[..6] {
+            let b_g = B::Point::mul_generator(&b);
+            assert_eq!(a_g.add(&b_g), B::Point::mul_generator(&(a + b)));
+            assert_eq!(a_g.sub(&b_g), B::Point::mul_generator(&(a - b)));
+            assert_eq!(b_g.mul(&a), B::Point::mul_generator(&(a * b)));
+            assert_eq!(
+                B::Point::lincomb([(&a_g, &b), (&g, &a)]),
+                B::Point::mul_generator(&(a * b + a))
+            );
+        }
+    }
 }
 
 fn permutation_properties<B: Backend>() {
@@ -350,6 +559,9 @@ backend_tests!(
     point_arithmetic,
     point_selection,
     x_coordinate_test,
+    x_coordinate_known_answers,
+    scalar_arithmetic,
+    point_scalar_consistency,
     permutation_properties,
     derivations,
     commitment_lengths,
@@ -358,12 +570,132 @@ backend_tests!(
 /// With both backends enabled, every output must agree.
 #[cfg(all(feature = "rustcrypto", feature = "boringssl"))]
 mod parity {
+    use alloc::vec::Vec;
+
     use crate::backend::boringssl::BoringSsl;
     use crate::backend::rustcrypto::RustCrypto;
-    use crate::backend::{Point, Scalar};
-    use crate::hash::BackendHashExt;
+    use crate::backend::{
+        Backend, FIELD_MODULUS, ORDER, POINT_LENGTH, Point, SCALAR_LENGTH, Scalar,
+    };
+    use crate::hash::{BackendHashExt, XmdPrefix};
     use crate::tests::{os_rng, random_key};
     use crate::{PublicKey, SecretKey};
+
+    /// `count` pseudorandom strings of `N` bytes, the same on every run.
+    fn strings<const N: usize>(label: &[u8], count: u16) -> Vec<[u8; N]> {
+        (0..count)
+            .map(|i| {
+                let mut out = [0u8; N];
+                XmdPrefix::<<RustCrypto as Backend>::Sha256>::new(&[]).expand_into(
+                    &[&i.to_be_bytes()],
+                    &[label],
+                    &mut out,
+                );
+                out
+            })
+            .collect()
+    }
+
+    /// The outputs of every scalar and point operation on the given inputs,
+    /// in order, as encodings; `None` where an operation has no result.
+    fn transcript<B: Backend>(
+        scalars: &[[u8; SCALAR_LENGTH]],
+        coordinates: &[[u8; SCALAR_LENGTH]],
+        points: &[[u8; POINT_LENGTH]],
+    ) -> Vec<Option<Vec<u8>>> {
+        let mut out = Vec::new();
+        let scalar = |s: B::Scalar| Some(s.to_bytes().to_vec());
+        let point = |p: B::Point| p.to_bytes().map(|b| b.to_vec());
+        let decoded: Vec<Option<B::Scalar>> = scalars
+            .iter()
+            .map(|b| B::Scalar::from_bytes(b).into_option())
+            .collect();
+        out.extend(decoded.iter().map(|s| s.map(|s| s.to_bytes().to_vec())));
+        let valid: Vec<B::Scalar> = decoded.into_iter().flatten().collect();
+        for (&a, &b) in valid.iter().zip(valid.iter().cycle().skip(1)) {
+            out.push(scalar(a + b));
+            out.push(scalar(a - b));
+            out.push(scalar(a * b));
+            out.push(scalar(-a));
+            out.push(a.invert().into_option().and_then(scalar));
+            let a_g = B::Point::mul_generator(&a);
+            let b_g = B::Point::mul_generator(&b);
+            out.push(point(a_g.clone()));
+            out.push(point(b_g.mul(&a)));
+            out.push(point(a_g.add(&b_g)));
+            out.push(point(a_g.sub(&b_g)));
+            out.push(point(a_g.double()));
+            out.push(point(a_g.neg()));
+            out.push(point(B::Point::lincomb([(&a_g, &b), (&b_g, &a)])));
+        }
+        for x in coordinates {
+            out.push(Some(alloc::vec![
+                bool::from(B::Point::is_x_coordinate(x)).into()
+            ]));
+        }
+        for p in points {
+            out.push(B::Point::from_bytes(p).into_option().and_then(point));
+        }
+        out
+    }
+
+    /// Both backends compute the same scalar and point arithmetic, scalar
+    /// and point decoding, and x-coordinate test, on random inputs and on
+    /// values at the boundaries of the order and the field modulus.
+    #[test]
+    fn arithmetic_agrees() {
+        let mut scalars = strings::<SCALAR_LENGTH>(b"scalar", 256);
+        let mut one = [0u8; SCALAR_LENGTH];
+        one[SCALAR_LENGTH - 1] = 1;
+        let mut above = ORDER;
+        above[SCALAR_LENGTH - 1] += 1;
+        scalars.extend([
+            [0; SCALAR_LENGTH],
+            one,
+            super::order_minus(1),
+            super::order_minus(2),
+            ORDER,
+            above,
+            [0xff; SCALAR_LENGTH],
+        ]);
+        // Random strings at or above the order are rare, so clear the top
+        // bit of some and set every bit of the top 32 of others.
+        for (i, s) in scalars.iter_mut().take(64).enumerate() {
+            if i % 2 == 0 {
+                s[0] &= 0x7f;
+            } else {
+                s[..4].fill(0xff);
+            }
+        }
+
+        let mut coordinates = strings::<SCALAR_LENGTH>(b"coordinate", 256);
+        let mut p_plus_one = FIELD_MODULUS;
+        p_plus_one[20..].fill(0);
+        p_plus_one[19] = 1;
+        coordinates.extend([[0; SCALAR_LENGTH], one, FIELD_MODULUS, p_plus_one]);
+
+        let mut points = strings::<POINT_LENGTH>(b"point", 256);
+        for (i, p) in points.iter_mut().enumerate() {
+            // Mostly compressed prefixes, with some of every other kind.
+            if i % 8 != 0 {
+                p[0] = 2 | (p[0] & 1);
+            }
+        }
+
+        let rc = transcript::<RustCrypto>(&scalars, &coordinates, &points);
+        let bssl = transcript::<BoringSsl>(&scalars, &coordinates, &points);
+        assert_eq!(rc.len(), bssl.len());
+        for (i, (x, y)) in rc.iter().zip(&bssl).enumerate() {
+            assert_eq!(x, y, "output {i}");
+        }
+        // The inputs exercise both outcomes of every check.
+        let some =
+            |range: core::ops::Range<usize>| rc[range].iter().filter(|o| o.is_some()).count();
+        let accepted = some(0..scalars.len());
+        assert!(accepted > 0 && accepted < scalars.len());
+        let decoded = some(rc.len() - points.len()..rc.len());
+        assert!(decoded > 0 && decoded < points.len());
+    }
 
     #[test]
     fn hashes_agree() {
