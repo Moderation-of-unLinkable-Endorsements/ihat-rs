@@ -29,7 +29,7 @@ let ctx_iss = b"epoch-42";                           // agreed out of band
 let ctx_red = b"moderator.example";                  // chosen by the Client
 
 // Issuance: Commit, Challenge, Respond, Finalize.
-let (anchor_state, commitment) = ec_ihat::commit(ctx_iss, b"session-1")?;
+let (anchor_state, commitment) = ec_ihat::commit(ctx_iss)?;
 let (client_state, challenge) =
     ec_ihat::challenge(&public_key, ctx_iss, ctx_red, &commitment)?;
 let response = ec_ihat::respond(&secret_key, anchor_state, &challenge)?;
@@ -62,9 +62,9 @@ and the protocol context. They perform no I/O, encryption, or authentication.
 
 Whoever can replay or modify a stored `AnchorState` recovers the signing key
 (Section 5.3 of the draft). The application must authenticate it, for
-example with an AEAD bound to the session identifier, and atomically claim
-the session before `respond`, keeping a tombstone even on failure. Decoding a
-copy does not make consumed state usable again.
+example with an AEAD bound to the transport's session identifier, and
+atomically claim the session before `respond`, keeping a tombstone even on
+failure. Decoding a copy does not make consumed state usable again.
 
 ## Backends
 
@@ -150,9 +150,7 @@ library in `p256` and `getrandom`, and the precomputed generator tables of
 * `respond` consumes the Anchor's state, `finalize` the Client's, and
   `redeem` the Endorsement, so none is used twice within a process. An
   Anchor must also refuse a second challenge for a session it has answered,
-  which the application's session store enforces; `respond` returns
-  `Error::Session` for a challenge that carries another session's
-  identifier.
+  which the application's session store enforces.
 * Decoding rejects non-canonical scalars and points, the identity element,
   non-minimal length prefixes, trailing bytes, and redemptions whose vectors
   do not match the depth of the Anchor Set.

@@ -11,7 +11,7 @@ fn client(bytes: &[u8]) -> bool {
 #[test]
 fn restored_continuations_complete_and_reject_malformed_blobs() {
     let key: SecretKey = SecretKey::generate().unwrap();
-    let (anchor_state, commitment) = ec_ihat::commit(b"epoch", b"session").unwrap();
+    let (anchor_state, commitment) = ec_ihat::commit(b"epoch").unwrap();
     let (client_state, challenge) =
         ec_ihat::challenge(&key.public_key(), b"epoch", b"scope", &commitment).unwrap();
     let a = anchor_state.to_bytes();
@@ -19,7 +19,6 @@ fn restored_continuations_complete_and_reject_malformed_blobs() {
     drop(anchor_state);
     drop(client_state);
     let anchor_state = AnchorState::from_bytes(&a).unwrap();
-    assert_eq!(anchor_state.session_id(), b"session");
     let client_state = ClientState::from_bytes(&c).unwrap();
     assert_eq!(*a, *anchor_state.to_bytes());
     assert_eq!(*c, *client_state.to_bytes());
@@ -66,8 +65,9 @@ fn restored_continuations_complete_and_reject_malformed_blobs() {
     bad[point..point + 33].fill(0);
     assert!(!client(&bad));
 
-    let mut bad = a.to_vec();
-    bad[anchor_header.len()] = 0x40;
-    bad.insert(anchor_header.len() + 1, 7); // A two-byte encoding of 7 is nonminimal.
-    assert!(!anchor(&bad));
+    let mut bad = c.to_vec();
+    let prefix = client_header.len() + 32;
+    bad[prefix] = 0x40;
+    bad.insert(prefix + 1, 5); // A two-byte encoding of 5 is nonminimal.
+    assert!(!client(&bad));
 }

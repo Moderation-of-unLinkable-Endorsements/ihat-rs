@@ -109,18 +109,16 @@ fn replay<B: Backend>(text: &str) {
 
     let ctx_iss = v.hex("issue.ctx_iss");
     let ctx_red = v.hex("issue.ctx_red");
-    let session_id = v.hex("issue.session_id");
     let z = context_base_for_tests::<B>(&ctx_iss);
     assert_eq!(z.to_bytes().unwrap().to_vec(), v.hex("issue.Z"));
 
     let mut rng = Replay::new(&v.hex("issue.commit.rand"));
-    let (anchor_state, commitment) = commit_with::<B, _>(&ctx_iss, &session_id, &mut rng).unwrap();
+    let (anchor_state, commitment) = commit_with::<B, _>(&ctx_iss, &mut rng).unwrap();
     rng.finish();
     assert_eq!(anchor_state.vector_bytes(), v.hex("issue.commit.state"));
     let encoded = commitment.to_bytes();
-    assert_eq!(encoded, v.hex("issue.commit.message"));
+    assert_eq!(encoded.to_vec(), v.hex("issue.commit.message"));
     let commitment = CommitMessage::<B>::from_bytes(&encoded).unwrap();
-    assert_eq!(commitment.session_id(), session_id);
 
     let mut rng = Replay::new(&v.hex("issue.challenge.rand"));
     let (client_state, challenge) =
@@ -128,7 +126,7 @@ fn replay<B: Backend>(text: &str) {
     rng.finish();
     assert_eq!(client_state.vector_bytes(), v.hex("issue.challenge.state"));
     let encoded = challenge.to_bytes();
-    assert_eq!(encoded, v.hex("issue.challenge.message"));
+    assert_eq!(encoded.to_vec(), v.hex("issue.challenge.message"));
     let challenge = ChallengeMessage::<B>::from_bytes(&encoded).unwrap();
 
     let response = respond(&key, anchor_state, &challenge).unwrap();

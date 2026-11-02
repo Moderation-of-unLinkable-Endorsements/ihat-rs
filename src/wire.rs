@@ -22,6 +22,9 @@ use crate::{Error, NULLIFIER_LENGTH};
 /// Length of an encoded signature with its nullifier.
 const SIGNATURE_LENGTH: usize = 4 * SCALAR_LENGTH + NULLIFIER_LENGTH;
 
+/// Length of an encoded commitment.
+const COMMIT_LENGTH: usize = 2 * POINT_LENGTH;
+
 /// Length of an encoded response.
 const RESPONSE_LENGTH: usize = 3 * SCALAR_LENGTH;
 
@@ -146,12 +149,14 @@ fn put_signature<B: Backend>(out: &mut Vec<u8>, signature: &Signature<B>) {
 }
 
 impl<B: Backend> CommitMessage<B> {
-    /// Encodes as `opaque session_id<V> || Element A || Element C`.
-    pub fn to_bytes(&self) -> Vec<u8> {
-        let mut out = Vec::with_capacity(8 + self.session_id.len() + 2 * POINT_LENGTH);
-        put_vector(&mut out, &self.session_id);
-        out.extend_from_slice(&point_bytes(&self.a));
-        out.extend_from_slice(&point_bytes(&self.c));
+    /// The encoded length: `2 * Ne`.
+    pub const LENGTH: usize = COMMIT_LENGTH;
+
+    /// Encodes as `Element A || Element C`.
+    pub fn to_bytes(&self) -> [u8; COMMIT_LENGTH] {
+        let mut out = [0u8; COMMIT_LENGTH];
+        out[..POINT_LENGTH].copy_from_slice(&point_bytes(&self.a));
+        out[POINT_LENGTH..].copy_from_slice(&point_bytes(&self.c));
         out
     }
 
@@ -159,7 +164,6 @@ impl<B: Backend> CommitMessage<B> {
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, Error> {
         let mut reader = Reader::new(bytes);
         let message = Self {
-            session_id: reader.vector()?.to_vec(),
             a: reader.element::<B>()?,
             c: reader.element::<B>()?,
         };
@@ -169,19 +173,18 @@ impl<B: Backend> CommitMessage<B> {
 }
 
 impl<B: Backend> ChallengeMessage<B> {
-    /// Encodes as `opaque session_id<V> || Scalar challenge`.
-    pub fn to_bytes(&self) -> Vec<u8> {
-        let mut out = Vec::with_capacity(8 + self.session_id.len() + SCALAR_LENGTH);
-        put_vector(&mut out, &self.session_id);
-        out.extend_from_slice(&self.challenge.to_bytes());
-        out
+    /// The encoded length: `Ns`.
+    pub const LENGTH: usize = SCALAR_LENGTH;
+
+    /// Encodes as `Scalar challenge`.
+    pub fn to_bytes(&self) -> [u8; SCALAR_LENGTH] {
+        self.challenge.to_bytes()
     }
 
     /// Decodes the encoding of [`Self::to_bytes`].
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, Error> {
         let mut reader = Reader::new(bytes);
         let message = Self {
-            session_id: reader.vector()?.to_vec(),
             challenge: reader.scalar::<B>()?,
         };
         reader.finish()?;

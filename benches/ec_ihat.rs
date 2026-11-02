@@ -29,17 +29,15 @@ fn bench_backend<B: Backend>(c: &mut Criterion, backend: &str) {
     group.bench_function("key_generation", |b| {
         b.iter(|| SecretKey::<B>::generate().unwrap())
     });
-    group.bench_function("commit", |b| {
-        b.iter(|| commit::<B>(CTX_ISS, b"session").unwrap())
-    });
-    let (_, commitment) = commit::<B>(CTX_ISS, b"session").unwrap();
+    group.bench_function("commit", |b| b.iter(|| commit::<B>(CTX_ISS).unwrap()));
+    let (_, commitment) = commit::<B>(CTX_ISS).unwrap();
     group.bench_function("challenge", |b| {
         b.iter(|| challenge(&public_key, CTX_ISS, CTX_RED, &commitment).unwrap())
     });
     group.bench_function("respond", |b| {
         b.iter_batched(
             || {
-                let (state, commitment) = commit::<B>(CTX_ISS, b"session").unwrap();
+                let (state, commitment) = commit::<B>(CTX_ISS).unwrap();
                 let (_, message) = challenge(&public_key, CTX_ISS, CTX_RED, &commitment).unwrap();
                 (state, message)
             },
@@ -50,7 +48,7 @@ fn bench_backend<B: Backend>(c: &mut Criterion, backend: &str) {
     group.bench_function("finalize", |b| {
         b.iter_batched(
             || {
-                let (state, commitment) = commit::<B>(CTX_ISS, b"session").unwrap();
+                let (state, commitment) = commit::<B>(CTX_ISS).unwrap();
                 let (client, message) =
                     challenge(&public_key, CTX_ISS, CTX_RED, &commitment).unwrap();
                 (client, respond(&key, state, &message).unwrap())
@@ -59,7 +57,7 @@ fn bench_backend<B: Backend>(c: &mut Criterion, backend: &str) {
             BatchSize::SmallInput,
         )
     });
-    let (state, commitment) = commit::<B>(CTX_ISS, b"session").unwrap();
+    let (state, commitment) = commit::<B>(CTX_ISS).unwrap();
     let (client, message) = challenge(&public_key, CTX_ISS, CTX_RED, &commitment).unwrap();
     let response = respond(&key, state, &message).unwrap();
     let endorsement = finalize(&public_key, client, &response).unwrap();
