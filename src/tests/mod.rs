@@ -40,6 +40,22 @@ mod protocol;
 mod vectors;
 
 #[test]
+fn shared_errors_preserve_their_kind() {
+    use crate::Error;
+
+    let cases = [
+        (ec_ihat::Error::Deserialize, Error::Deserialize),
+        (ec_ihat::Error::Verify, Error::Verify),
+        (ec_ihat::Error::Derive, Error::Derive),
+        (ec_ihat::Error::InvalidInput, Error::InvalidInput),
+        (ec_ihat::Error::Entropy, Error::Entropy),
+    ];
+    for (shared, expected) in cases {
+        assert_eq!(Error::from(shared), expected, "{shared:?}");
+    }
+}
+
+#[test]
 fn errors_display_distinct_messages() {
     use crate::Error;
 

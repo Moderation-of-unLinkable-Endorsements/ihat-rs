@@ -188,10 +188,9 @@ impl From<ec_ihat::Error> for Error {
             ec_ihat::Error::Deserialize => Self::Deserialize,
             ec_ihat::Error::Verify => Self::Verify,
             ec_ihat::Error::Derive => Self::Derive,
-            ec_ihat::Error::InvalidInput => Self::InvalidInput,
             ec_ihat::Error::Entropy => Self::Entropy,
-            // The shared crate may add variants; a new one has no mirror in
-            // this draft's errors, so it surfaces as an input rejection.
+            // InvalidInput and any future variants without a mirror in this
+            // draft's errors surface as an input rejection.
             _ => Self::InvalidInput,
         }
     }
