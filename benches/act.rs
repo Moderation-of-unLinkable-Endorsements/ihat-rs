@@ -107,6 +107,9 @@ fn bench_backend<B: BackendFixedBaseExt>(c: &mut Criterion, backend: &str) {
                     BatchSize::SmallInput,
                 )
             });
+            group.bench_function(BenchmarkId::new("restore_prove_spend", shape), |b| {
+                b.iter(|| prove_spend(&params, fresh(), CTX_CRED, s, a, CTX_SPEND).unwrap())
+            });
             let (state, spend) = prove_spend(&params, fresh(), CTX_CRED, s, a, CTX_SPEND).unwrap();
             let spend_bytes = spend.to_bytes();
             group.bench_with_input(BenchmarkId::new("decode_spend", shape), &shape, |b, _| {
@@ -138,6 +141,12 @@ fn bench_backend<B: BackendFixedBaseExt>(c: &mut Criterion, backend: &str) {
                     )
                 },
             );
+            group.bench_function(BenchmarkId::new("restore_finalize_refund", shape), |b| {
+                b.iter(|| {
+                    let state = ClientSpendState::<B>::from_bytes(&params, &state_bytes).unwrap();
+                    finalize_refund(&params, &public_key, CTX_CRED, state, &refund).unwrap()
+                })
+            });
         }
         group.finish();
     }

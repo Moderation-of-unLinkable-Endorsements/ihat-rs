@@ -1,3 +1,4 @@
 /target
+/benches/profile/
 /boringssl
 /mutants.out*

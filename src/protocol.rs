@@ -788,15 +788,10 @@ pub(crate) fn prove_spend_with<B: BackendFixedBaseExt, R: Random>(
     let (r1, r2, kstar, rn) = (&derived[0], &derived[1], &derived[2], &derived[3]);
 
     // Rerandomize the signature.
+    let h1_prime = fixed::<B, 2>([(&gens.h2, &credential.k), (&gens.h4, &ctx)]).add(&gens.g);
     let c_scalar = Zeroizing::new(B::Scalar::from(c));
     let b_msg = SecretPoint(
-        fixed::<B, 4>([
-            (&gens.h1, &*c_scalar),
-            (&gens.h2, &credential.k),
-            (&gens.h3, &credential.r),
-            (&gens.h4, &ctx),
-        ])
-        .add(&gens.g),
+        fixed::<B, 2>([(&gens.h1, &*c_scalar), (&gens.h3, &credential.r)]).add(&h1_prime),
     );
     let r1r2 = Zeroizing::new(*r1 * *r2);
     let a_prime = credential.a.mul(&r1r2);
@@ -841,7 +836,6 @@ pub(crate) fn prove_spend_with<B: BackendFixedBaseExt, R: Random>(
     }
     debug_assert_eq!(witness.len(), witness_len);
 
-    let h1_prime = fixed::<B, 2>([(&gens.h2, &credential.k), (&gens.h4, &ctx)]).add(&gens.g);
     let statement = Spend::new(
         gens,
         l,
@@ -859,12 +853,7 @@ pub(crate) fn prove_spend_with<B: BackendFixedBaseExt, R: Random>(
 
     // The commitment the refund will sign, opened by the new Credential's
     // secrets; the Moderator recomputes it from the message.
-    let v1_scalar = Zeroizing::new(B::Scalar::from(v1));
-    let k_prime = fixed::<B, 3>([
-        (&gens.h1, &*v1_scalar),
-        (&gens.h2, kstar),
-        (&gens.h3, &*r_star),
-    ]);
+    let k_prime = statement.balance_commitment();
 
     let state = ClientSpendState {
         kstar: *kstar,

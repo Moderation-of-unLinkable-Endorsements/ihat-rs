@@ -83,6 +83,13 @@ fn spend<B: BackendFixedBaseExt>(
     t: u64,
 ) -> (Credential<B>, SpendMessage<B>) {
     let (state, message) = prove_spend(&setup.params, credential, CTX, s, a, CHALLENGE).unwrap();
+    let gens = setup.params.generators();
+    let expected = gens
+        .h1
+        .mul(&B::Scalar::from(state.v1))
+        .add(&gens.h2.mul(&state.kstar))
+        .add(&gens.h3.mul(&state.r_star));
+    assert_eq!(state.k_prime, expected);
     let message = SpendMessage::from_bytes(&setup.params, &message.to_bytes()).unwrap();
     let verified = verify_spend(&setup.params, &setup.key, CTX, CHALLENGE, &message).unwrap();
     let refund = issue_refund(verified, t).unwrap();
