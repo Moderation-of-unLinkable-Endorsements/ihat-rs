@@ -1,0 +1,132 @@
+// Copyright 2026 Google LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+//! Crate-internal tests, run against every enabled backend: replayed test
+//! vectors, protocol behavior, and primitive known answers.
+
+#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+
+use alloc::vec::Vec;
+
+use crate::random::Random;
+
+/// Instantiates generic test functions for each enabled backend.
+macro_rules! backend_tests {
+    ($($name:ident),* $(,)?) => {
+        #[cfg(feature = "rustcrypto")]
+        mod rustcrypto {
+            $(#[test] fn $name() { super::$name::<crate::backend::rustcrypto::RustCrypto>(); })*
+        }
+        #[cfg(feature = "boringssl")]
+        mod boringssl {
+            $(#[test] fn $name() { super::$name::<crate::backend::boringssl::BoringSsl>(); })*
+        }
+    };
+}
+
+mod primitives;
+mod protocol;
+mod vectors;
+
+#[test]
+fn shared_errors_preserve_their_kind() {
+    use crate::Error;
+
+    let cases = [
+        (ec_ihat::Error::Deserialize, Error::Deserialize),
+        (ec_ihat::Error::Verify, Error::Verify),
+        (ec_ihat::Error::Derive, Error::Derive),
+        (ec_ihat::Error::InvalidInput, Error::InvalidInput),
+        (ec_ihat::Error::Entropy, Error::Entropy),
+    ];
+    for (shared, expected) in cases {
+        assert_eq!(Error::from(shared), expected, "{shared:?}");
+    }
+}
+
+#[test]
+fn errors_display_distinct_messages() {
+    use crate::Error;
+
+    let errors = [
+        Error::Deserialize,
+        Error::Verify,
+        Error::Derive,
+        Error::Amount,
+        Error::InvalidInput,
+        Error::Entropy,
+    ];
+    let messages: Vec<_> = errors
+        .iter()
+        .map(|error| alloc::format!("{error}"))
+        .collect();
+    for (i, message) in messages.iter().enumerate() {
+        assert!(!message.is_empty(), "empty message for {:?}", errors[i]);
+        assert!(!messages[..i].contains(message), "duplicate error message");
+    }
+    assert_eq!(messages[5], "the system random number generator failed");
+}
+
+/// Serves `random` from a recorded byte string.
+pub(crate) struct Replay {
+    data: Vec<u8>,
+    offset: usize,
+}
+
+impl Replay {
+    pub(crate) fn new(data: &[u8]) -> Self {
+        Self {
+            data: data.to_vec(),
+            offset: 0,
+        }
+    }
+
+    /// A source that repeats one byte, for tests that need any randomness.
+    pub(crate) fn constant(byte: u8, len: usize) -> Self {
+        Self::new(&alloc::vec![byte; len])
+    }
+
+    /// Asserts that every recorded byte was consumed.
+    pub(crate) fn finish(self) {
+        assert_eq!(self.offset, self.data.len(), "unconsumed replay bytes");
+    }
+}
+
+impl Random for Replay {
+    fn fill(&mut self, buf: &mut [u8]) -> Result<(), crate::Error> {
+        let end = self.offset + buf.len();
+        assert!(
+            end <= self.data.len(),
+            "replay exhausted: {} of {}",
+            end,
+            self.data.len()
+        );
+        buf.copy_from_slice(&self.data[self.offset..end]);
+        self.offset = end;
+        Ok(())
+    }
+}
+
+/// The operating system's random number generator, for tests that do not
+/// pin their randomness.
+pub(crate) fn os_rng<B: crate::Backend>() -> crate::random::SystemRandom<B> {
+    crate::random::SystemRandom::new()
+}
+
+/// A key derived from a seed drawn from `rng`.
+pub(crate) fn random_key<B: crate::Backend>(rng: &mut impl Random) -> crate::SecretKey<B> {
+    let mut seed = [0u8; crate::SEED_LENGTH];
+    rng.fill(&mut seed).unwrap();
+    crate::SecretKey::from_seed(&seed).unwrap()
+}
