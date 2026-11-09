@@ -109,10 +109,8 @@ extern crate alloc;
 #[cfg(not(any(feature = "rustcrypto", feature = "boringssl")))]
 compile_error!("enable at least one backend feature: `rustcrypto` or `boringssl`");
 
-pub mod backend;
 mod hash;
 mod protocol;
-mod random;
 mod sigma;
 mod statements;
 mod wire;
@@ -127,7 +125,8 @@ mod readme {}
 
 use core::fmt;
 
-pub use backend::{Backend, BackendFixedBaseExt};
+pub use mole_p256::backend;
+pub use mole_p256::backend::{Backend, BackendFixedBaseExt};
 pub use protocol::{
     ClientIssuanceState, ClientSpendState, Credential, IssueRequestMessage, IssueResponseMessage,
     Params, PublicKey, RefundMessage, SecretKey, SpendMessage, VerifiedIssueRequest, VerifiedSpend,
@@ -156,8 +155,7 @@ pub const PROTOCOL_CONTEXT: &[u8] = b"ACTv1-P256-SHA256";
 /// The largest permitted balance width `L` (`MAX_BIT_LENGTH`).
 pub const MAX_BALANCE_WIDTH: u8 = 64;
 
-/// The seed length `Nseed` consumed by every scalar derivation.
-pub const SEED_LENGTH: usize = 48;
+pub use mole_p256::SEED_LENGTH;
 
 /// The errors of the draft. Any error aborts the affected protocol run.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -182,16 +180,12 @@ pub enum Error {
     Entropy,
 }
 
-impl From<ec_ihat::Error> for Error {
-    fn from(error: ec_ihat::Error) -> Self {
+impl From<mole_p256::Error> for Error {
+    fn from(error: mole_p256::Error) -> Self {
         match error {
-            ec_ihat::Error::Deserialize => Self::Deserialize,
-            ec_ihat::Error::Verify => Self::Verify,
-            ec_ihat::Error::Derive => Self::Derive,
-            ec_ihat::Error::Entropy => Self::Entropy,
-            // InvalidInput and any future variants without a mirror in this
-            // draft's errors surface as an input rejection.
-            _ => Self::InvalidInput,
+            mole_p256::Error::InvalidInput => Self::InvalidInput,
+            mole_p256::Error::Derive => Self::Derive,
+            mole_p256::Error::Entropy => Self::Entropy,
         }
     }
 }

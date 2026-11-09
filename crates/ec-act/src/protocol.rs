@@ -18,7 +18,8 @@
 use alloc::vec::Vec;
 use core::fmt;
 
-use ec_ihat::hash::BackendHashExt;
+use mole_p256::hash::BackendHashExt;
+use mole_p256::random::{Random, SystemRandom};
 use subtle::{Choice, ConditionallySelectable};
 use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};
 
@@ -26,7 +27,6 @@ use crate::backend::{
     Backend, BackendFixedBaseExt, FixedBase, POINT_LENGTH, Point, SCALAR_LENGTH, Scalar,
 };
 use crate::hash::{self, NSEED};
-use crate::random::{Random, SystemRandom};
 use crate::sigma;
 use crate::statements::{Commitment, Signature, Spend, fixed, spend_weights, weighted_scalars};
 use crate::{DefaultBackend, Error, MAX_BALANCE_WIDTH, PROTOCOL_CONTEXT};

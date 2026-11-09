@@ -74,13 +74,6 @@
 //! * Secrets the crate derives or decodes are zeroized on drop. The bytes
 //!   of an encoding that fails to decode remain the caller's to wipe.
 
-// TODO: move the backend, hashing, and derivation layers into a `mole-p256`
-// crate shared with act-rs. `backend` has the names and signatures of
-// act-rs's backend, less what only ACT uses, and `hash` has act-rs's
-// hashing and derivation functions with the protocol context as a
-// parameter, so both crates can depend on one copy. `random` can move with
-// them.
-
 #![no_std]
 #![deny(unsafe_code)]
 #![deny(missing_docs)]
@@ -98,12 +91,9 @@ extern crate alloc;
 #[cfg(not(any(feature = "rustcrypto", feature = "boringssl")))]
 compile_error!("enable at least one backend feature: `rustcrypto` or `boringssl`");
 
-pub mod backend;
 mod commitment;
-pub mod hash;
 mod permutation;
 mod protocol;
-mod random;
 mod storage;
 mod wire;
 
@@ -117,7 +107,8 @@ mod readme {}
 
 use core::fmt;
 
-pub use backend::Backend;
+pub use mole_p256::backend;
+pub use mole_p256::backend::Backend;
 pub use protocol::{
     AnchorState, ChallengeMessage, ClientState, CommitMessage, Endorsement, PublicKey, Redemption,
     ResponseMessage, SecretKey, challenge, commit, finalize, redeem, respond, verify,
@@ -142,8 +133,7 @@ pub const CIPHERSUITE_IDENTIFIER: &[u8] = b"P256-SHA256";
 /// The protocol context `ctx_proto = "EC-IHATv1-" || identifier`.
 pub const PROTOCOL_CONTEXT: &[u8] = b"EC-IHATv1-P256-SHA256";
 
-/// The seed length `Nseed` consumed by every scalar derivation.
-pub const SEED_LENGTH: usize = 48;
+pub use mole_p256::SEED_LENGTH;
 
 /// The nullifier length `Nn`.
 pub const NULLIFIER_LENGTH: usize = 32;
@@ -170,11 +160,12 @@ pub enum Error {
     Entropy,
 }
 
-impl From<hash::Error> for Error {
-    fn from(error: hash::Error) -> Self {
+impl From<mole_p256::Error> for Error {
+    fn from(error: mole_p256::Error) -> Self {
         match error {
-            hash::Error::InvalidInput => Self::InvalidInput,
-            hash::Error::Derive => Self::Derive,
+            mole_p256::Error::InvalidInput => Self::InvalidInput,
+            mole_p256::Error::Derive => Self::Derive,
+            mole_p256::Error::Entropy => Self::Entropy,
         }
     }
 }

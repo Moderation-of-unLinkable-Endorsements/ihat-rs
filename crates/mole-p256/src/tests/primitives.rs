@@ -1,31 +1,32 @@
-//! Known answers and properties of the primitives beneath the protocol.
+//! Known answers and properties of the primitives.
 
 use alloc::vec::Vec;
 
 use subtle::{Choice, ConditionallySelectable};
 
 use crate::Error;
-use crate::backend::{Backend, FIELD_MODULUS, ORDER, POINT_LENGTH, Point, SCALAR_LENGTH, Scalar};
-use crate::commitment::{
-    Node, commit_val_at_place, depth, generate_vec_bind, hash_node, vec_commit, vec_equivocate,
+use crate::backend::{
+    Backend, BackendFixedBaseExt, FIELD_MODULUS, FixedBase, ORDER, Point, SCALAR_LENGTH, Scalar,
 };
-use crate::hash::{self, BackendHashExt, XmdPrefix};
-use crate::permutation::{
-    is_valid_permutation_encoding, p, p_inv, permutation_pair, permute_bytes, select_bytes,
-    unpermute_bytes,
-};
+use crate::hash::{BackendHashExt, XmdPrefix};
+use crate::random::{Random, SystemRandom};
 
-const CTX: &[u8] = crate::PROTOCOL_CONTEXT;
+/// A protocol context for the derivations; any value would do.
+const CTX: &[u8] = b"EC-IHATv1-P256-SHA256";
 
 #[test]
-fn hash_errors_display_messages() {
+fn errors_display_messages() {
     assert_eq!(
-        alloc::format!("{}", hash::Error::InvalidInput),
+        alloc::format!("{}", Error::InvalidInput),
         "input has an invalid length or count"
     );
     assert_eq!(
-        alloc::format!("{}", hash::Error::Derive),
+        alloc::format!("{}", Error::Derive),
         "derivation failed to produce a usable scalar or group element"
+    );
+    assert_eq!(
+        alloc::format!("{}", Error::Entropy),
+        "the system random number generator failed"
     );
 }
 
@@ -110,6 +111,16 @@ fn point_arithmetic<B: Backend>() {
         "026b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c296"
     );
     assert!(bool::from(B::Point::from_bytes(&[0; 33]).is_none()));
+    // Only the compressed prefixes decode: not 0x04 (uncompressed), 0x05
+    // (the SEC1 compact tag), or any other.
+    for prefix in (0..=u8::MAX).filter(|prefix| *prefix != 2 && *prefix != 3) {
+        let mut other = g.to_bytes().unwrap();
+        other[0] = prefix;
+        assert!(
+            bool::from(B::Point::from_bytes(&other).is_none()),
+            "prefix {prefix:#04x}"
+        );
+    }
     let mut zeroized = g.clone();
     zeroized.zeroize();
     assert!(bool::from(zeroized.is_identity()));
@@ -411,44 +422,6 @@ fn point_scalar_consistency<B: Backend>() {
     }
 }
 
-fn permutation_properties<B: Backend>() {
-    let mut buf = [0u8; 33];
-    buf[0] = 1;
-    buf[5] = 7;
-    let original = buf;
-    permute_bytes::<B>(&mut buf);
-    assert_ne!(buf, original);
-    assert!(buf[0] <= 1);
-    unpermute_bytes::<B>(&mut buf);
-    assert_eq!(buf, original);
-
-    assert_eq!(select_bytes(&[1; 33], &[2; 33], Choice::from(0)), [1; 33]);
-    assert_eq!(select_bytes(&[1; 33], &[2; 33], Choice::from(1)), [2; 33]);
-
-    let g = B::Point::generator().to_bytes().unwrap();
-    let mut encoding = g;
-    encoding[0] -= 2;
-    assert!(bool::from(is_valid_permutation_encoding::<B>(&encoding)));
-    encoding[0] = 2;
-    assert!(!bool::from(is_valid_permutation_encoding::<B>(&encoding)));
-
-    for i in 0..8u64 {
-        let secret = B::hash_to_scalar(CTX, &[&i.to_be_bytes()]);
-        let t = B::Point::mul_generator(&secret);
-        assert_eq!(p_inv::<B>(&p::<B>(&t).unwrap()).unwrap(), t);
-        assert_eq!(p::<B>(&p_inv::<B>(&t).unwrap()).unwrap(), t);
-        // Binding left walks backwards from T = P(Q); binding right walks
-        // forwards from T = Q.
-        let (q, pq) = permutation_pair::<B>(&t, Choice::from(1)).unwrap();
-        assert_eq!(pq, t);
-        assert_eq!(p::<B>(&q).unwrap(), t);
-        let (q, pq) = permutation_pair::<B>(&t, Choice::from(0)).unwrap();
-        assert_eq!(q, t);
-        assert_eq!(pq, p::<B>(&t).unwrap());
-    }
-    assert!(p::<B>(&B::Point::identity()).is_err());
-}
-
 fn derivations<B: Backend>() {
     let rand = [1u8; 48];
     let a = B::derive_scalars(CTX, &rand, b"a", 3).unwrap();
@@ -464,11 +437,11 @@ fn derivations<B: Backend>() {
     for wrong in [&long[..0], &long[..47], &long[..49]] {
         assert_eq!(
             B::derive_scalars(CTX, wrong, b"a", 1).unwrap_err(),
-            hash::Error::InvalidInput
+            Error::InvalidInput
         );
         assert_eq!(
             B::derive_nonces(CTX, b"secret", b"e", &[b"x"], wrong, 1).unwrap_err(),
-            hash::Error::InvalidInput
+            Error::InvalidInput
         );
     }
     let seed = [1u8; 48];
@@ -487,70 +460,194 @@ fn derivations<B: Backend>() {
     assert!(B::hash_to_group(CTX, &[b"x"]).is_ok());
 }
 
-/// Three leaves take two levels. A third key, trapdoor, or opening would
-/// let the tree reach its root a level early, so each is rejected.
-fn commitment_lengths<B: Backend>() {
-    let index = 1;
-    let trapdoors = [2, 3, 5].map(B::Scalar::from);
-    let openings = [7, 11, 13].map(B::Scalar::from);
-    let keys = generate_vec_bind::<B>(index, &trapdoors).unwrap();
-    let leaves: Vec<Node> = (0..3).map(|i| [i; POINT_LENGTH]).collect();
-    let invalid = Some(Error::InvalidInput);
-
-    vec_commit::<B>(&leaves, &keys[..2], &openings[..2], Error::Derive).unwrap();
-    for (keys, openings) in [(&keys[..], &openings[..]), (&keys[..2], &openings[..])] {
-        assert_eq!(
-            vec_commit::<B>(&leaves, keys, openings, Error::Derive).err(),
-            invalid
-        );
-    }
-
-    let first = commit_val_at_place::<B>(&keys[..2], 3, index, &leaves[1], &openings[..2]).unwrap();
-    for (keys, openings) in [(&keys[..], &openings[..]), (&keys[..2], &openings[..])] {
-        assert_eq!(
-            commit_val_at_place::<B>(keys, 3, index, &leaves[1], openings).err(),
-            invalid
-        );
-    }
-
-    let new = || leaves.iter().map(|leaf| hash_node::<B>(leaf)).collect();
-    vec_equivocate(
-        &first,
-        &keys[..2],
-        &trapdoors[..2],
-        &openings[..2],
-        new(),
-        index,
-    )
-    .unwrap();
-    for (trapdoors, openings) in [
-        (&trapdoors[..], &openings[..2]),
-        (&trapdoors[..2], &openings[..]),
+/// Known answers from the drafts' Python reference implementation,
+/// `poc/src/ec_ihat/ciphersuite.py` in the internet-drafts repository, under
+/// the context `CTX`. The secrets of `DeriveNonces` straddle the block
+/// boundaries that `PadToBlock` pads them to.
+fn derivation_known_answers<B: Backend>() {
+    let hex = |scalar: &B::Scalar| hex::encode(scalar.to_bytes());
+    let long: Vec<u8> = (0..100).collect();
+    for (msg, expected) in [
+        (
+            &b""[..],
+            "e60b6f8dac928229320e538866e58949892df44a3aedcb776aa76378d3c2d34d",
+        ),
+        (
+            b"abc",
+            "50763e11bbf0cd083b6fa4bf2be89df76516e60dd9111dc41ea61ebee5a5342d",
+        ),
+        (
+            &long,
+            "b49d1dab7777ae8bf5e84148c878268b0226f0b9e99794e02a41000ddb385678",
+        ),
     ] {
+        assert_eq!(hex(&B::hash_to_scalar(CTX, &[msg])), expected);
+        let (first, second) = msg.split_at(msg.len() / 2);
+        assert_eq!(hex(&B::hash_to_scalar(CTX, &[first, second])), expected);
+    }
+    assert_eq!(
+        hex(&B::hash_to_scalar_with_dst(&[b"abc"], &[b"test-", b"dst"])),
+        "3cdef7b790a234186cfd15347bdaa8e51eafd45875db0ed5287faf0a42abd353"
+    );
+
+    // Reduction of 48-byte integers, `int.from_bytes(x, "big") % ORDER`.
+    for (input, expected) in [
+        (
+            "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+            "431905529c0166ce652e96b7ccca0a99679b73e19ad16947f01cf013fc632550",
+        ),
+        (
+            "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f",
+            "18185bb801b6065828af9bb667d107070b65183fa249175ca5990e37966adde8",
+        ),
+        (
+            "000000000000000000000000000000000000000000000001000000000000000000000000000000000000000000000000",
+            "0000000000000001000000000000000000000000000000000000000000000000",
+        ),
+    ] {
+        let input: [u8; 48] = hex::decode(input).unwrap().try_into().unwrap();
+        assert_eq!(hex(&B::reduce_be_48(&input)), expected);
+    }
+
+    let rand: Vec<u8> = (0..48).map(|i| 3 * i + 1).collect();
+    let scalars = B::derive_scalars(CTX, &rand, b"info", 3).unwrap();
+    assert_eq!(
+        scalars.iter().map(hex).collect::<Vec<_>>(),
+        [
+            "43a0a001fb0ef6768dbb640e6f554edc84719fa0909ef841f6824e0a387f9531",
+            "70059d4501736c4f96cb8c023319b6bd694385741a4673f85ce62a64eb0fdcfe",
+            "38117a2c4dc58c6885628997343788e22b6ec991ef6426d2d569d6316bd5037a",
+        ]
+    );
+
+    for (secret_len, expected) in [
+        (
+            0,
+            [
+                "c24c3d50d34c6c78ff7d9d52f3b55cd33ce6f8fc217a41effc535e6be7f1f890",
+                "b5d42aa9f03f17ab7906290b93b7b637d6545843fc28d6499c8a65004e4a015b",
+            ],
+        ),
+        (
+            1,
+            [
+                "9094b543f5a51477dfdb12d5ecc20b6b8a18c0a5553ef62fdcda35264dc3f3ae",
+                "d0fa20014b037dd14f69d7ff0749110b6224683bb42337612d1ec1bae7a799ac",
+            ],
+        ),
+        (
+            59,
+            [
+                "ae3c0754b66d563e65808fa954d1fa34618fecd7a237c1e4477fb0794aafbb5d",
+                "a2bd6b9f092cee42df0d47007ceec956871c8f1ec5f7dfa88cce0dbace433203",
+            ],
+        ),
+        (
+            60,
+            [
+                "af37ddc738a1d898b6d55cf3fb0bf8edc7c769d682d8e2c3d212ba87b0ec22d6",
+                "9fb457933d8d9b6ed420194b3d4f52c0af5969a4668f3324917b4ee1637f645b",
+            ],
+        ),
+        (
+            61,
+            [
+                "73337377bf3cd1de0233e3b036affe79198bde35ca789de312d92a75f93e95c4",
+                "0f13c95839e6dfb361dd59254341f0351c8b98d691ddf8618a34edd9c04b52e3",
+            ],
+        ),
+        (
+            64,
+            [
+                "75bc0ce230297c741c200652819b820e38d753fa85aaeea60cb6f33055d8c733",
+                "c8ed53ae2cad6d67b62ee7d68c6b6395d238be80af87301cd3f8fea7506b38f7",
+            ],
+        ),
+        (
+            124,
+            [
+                "563ee16c184e640f6fc7885cf15e8907629705f5361a34d5af841cde58484374",
+                "2f7541907a9a6b28f2ec43410ca7af747543e8f3db4dbca71119d08f694256cf",
+            ],
+        ),
+        (
+            125,
+            [
+                "083472196f565b8b1e1c26e1f843270e6e26a2b412cfd11d35cd2c176ca939e2",
+                "71654f76662761e7bb864da4f0f52c913aad63cfc2225b29566cbabfbb4ceede",
+            ],
+        ),
+    ] {
+        let secret = alloc::vec![0x5a; secret_len];
+        let nonces = B::derive_nonces(CTX, &secret, b"label", &[b"instance"], &rand, 2).unwrap();
         assert_eq!(
-            vec_equivocate(&first, &keys[..2], trapdoors, openings, new(), index).err(),
-            invalid
+            nonces.iter().map(hex).collect::<Vec<_>>(),
+            expected,
+            "secret of {secret_len} bytes"
+        );
+    }
+
+    let seed: [u8; 48] = core::array::from_fn(|i| 48 + i as u8);
+    assert_eq!(
+        hex(&B::derive_key_scalar(CTX, &seed, b"GenerateKeyPair").unwrap()),
+        "c114f46c88aa275081496d26129f80810d6166924e655765f5a4dbd3bc3ec56a"
+    );
+    assert_eq!(
+        hex::encode(
+            B::hash_to_group(CTX, &[b"abc"])
+                .unwrap()
+                .to_bytes()
+                .unwrap()
+        ),
+        "022a6290bdfc46a885d8152b0d5763d629cd4c83267b3d648e981ecd23336b1dd6"
+    );
+}
+
+/// Fixed-base multiplication agrees with general multiplication, on
+/// scalars that reach every digit of the table.
+fn fixed_base_tables<B: BackendFixedBaseExt>() {
+    // ACT's first generator, a point with no known relation to `B`.
+    let h1 = B::hash_to_curve(&[b"GenH1"], &[b"HashToGroup-ACTv1-P256-SHA256"]).unwrap();
+    let table = B::FixedBase::new(h1.clone());
+    assert_eq!(table.point(), &h1);
+    assert!(alloc::format!("{table:?}").starts_with("FixedPoint("));
+    let mut scalars = alloc::vec![
+        B::Scalar::default(),
+        B::Scalar::from(1),
+        B::Scalar::from(2),
+        B::Scalar::from(15),
+        B::Scalar::from(16),
+        B::Scalar::from(u64::MAX),
+        B::Scalar::from_bytes(&order_minus(1)).unwrap(),
+    ];
+    // Interpretation under Miri is slow; a couple of hashed scalars suffice
+    // there, since the fixed cases already cover every digit path.
+    let hashed = if cfg!(miri) { 2 } else { 32 };
+    for i in 0..hashed {
+        scalars.push(B::hash_to_scalar_with_dst(&[&[i]], &[b"fixed-base-test"]));
+    }
+    for scalar in scalars {
+        assert_eq!(
+            table.mul(&scalar),
+            h1.mul(&scalar),
+            "{:?}",
+            scalar.to_bytes()
         );
     }
 }
 
-#[test]
-fn depths() {
-    let expected = [
-        (0, 0),
-        (1, 0),
-        (2, 1),
-        (3, 2),
-        (4, 2),
-        (5, 3),
-        (8, 3),
-        (9, 4),
-    ];
-    for (n, q) in expected {
-        assert_eq!(depth(n), q, "{n}");
-    }
-    assert_eq!(depth(65535), 16);
-    assert_eq!(depth(usize::MAX), usize::BITS as usize);
+/// The system generator fills what it is asked to: two draws are neither
+/// zero nor equal, except with negligible probability.
+fn randomness<B: Backend>() {
+    let mut direct = [0u8; 32];
+    B::random_bytes(&mut direct).unwrap();
+    let mut through = [0u8; 32];
+    SystemRandom::<B>::new().fill(&mut through).unwrap();
+    assert_ne!(direct, [0; 32]);
+    assert_ne!(through, [0; 32]);
+    assert_ne!(direct, through);
+    assert_ne!(*B::generate_seed().unwrap(), *B::generate_seed().unwrap());
+    B::random_bytes(&mut []).unwrap();
 }
 
 backend_tests!(
@@ -562,9 +659,10 @@ backend_tests!(
     x_coordinate_known_answers,
     scalar_arithmetic,
     point_scalar_consistency,
-    permutation_properties,
     derivations,
-    commitment_lengths,
+    derivation_known_answers,
+    fixed_base_tables,
+    randomness,
 );
 
 /// With both backends enabled, every output must agree.
@@ -578,8 +676,6 @@ mod parity {
         Backend, FIELD_MODULUS, ORDER, POINT_LENGTH, Point, SCALAR_LENGTH, Scalar,
     };
     use crate::hash::{BackendHashExt, XmdPrefix};
-    use crate::tests::{os_rng, random_key};
-    use crate::{PublicKey, SecretKey};
 
     /// `count` pseudorandom strings of `N` bytes, the same on every run.
     fn strings<const N: usize>(label: &[u8], count: u16) -> Vec<[u8; N]> {
@@ -713,32 +809,5 @@ mod parity {
                     .to_bytes()
             );
         }
-    }
-
-    #[test]
-    fn redemptions_interoperate() {
-        let keys: [SecretKey<RustCrypto>; 3] =
-            core::array::from_fn(|_| random_key(&mut os_rng::<RustCrypto>()));
-        let anchor_rc: [PublicKey<RustCrypto>; 3] = core::array::from_fn(|i| keys[i].public_key());
-        let anchor_bssl: [PublicKey<BoringSsl>; 3] =
-            core::array::from_fn(|i| PublicKey::from_bytes(&anchor_rc[i].to_bytes()).unwrap());
-        // The Anchor on RustCrypto, the Client on BoringSSL.
-        let (state, commitment) = crate::commit::<RustCrypto>(b"iss").unwrap();
-        let commitment =
-            crate::CommitMessage::<BoringSsl>::from_bytes(&commitment.to_bytes()).unwrap();
-        let (client, challenge) =
-            crate::challenge(&anchor_bssl[2], b"iss", b"red", &commitment).unwrap();
-        let challenge =
-            crate::ChallengeMessage::<RustCrypto>::from_bytes(&challenge.to_bytes()).unwrap();
-        let response = crate::respond(&keys[2], state, &challenge).unwrap();
-        let response =
-            crate::ResponseMessage::<BoringSsl>::from_bytes(&response.to_bytes()).unwrap();
-        let endorsement = crate::finalize(&anchor_bssl[2], client, &response).unwrap();
-        let redemption =
-            crate::redeem(&anchor_bssl, 2, endorsement, b"iss", b"red", b"digest").unwrap();
-        // The Moderator on RustCrypto.
-        let redemption =
-            crate::Redemption::<RustCrypto>::from_bytes(&redemption.to_bytes(), 3).unwrap();
-        crate::verify_redemption(&anchor_rc, &redemption, b"iss", b"red", b"digest").unwrap();
     }
 }

@@ -54,9 +54,11 @@ returned as `Zeroizing<Vec<u8>>` because they hold secrets.
 
 ## Backends
 
-Most cryptographic operations go through IHAT's `Backend` trait, re-exported
-by this crate, following the design of the ATHM crate that Chromium builds. Two
-implementations are provided, selected by Cargo feature:
+Most cryptographic operations go through the `Backend` trait of
+[`mole-p256`](../mole-p256), the P-256 layer shared with `ec-ihat`, which this
+crate re-exports as `ec_act::backend`; it follows the design of the ATHM crate
+that Chromium builds. Two implementations are provided, selected by Cargo
+feature:
 
 | Feature       | Curve, SHA-256, hash-to-curve, randomness | SHAKE128 |
 |---------------|-------------------------------------------|----------|
@@ -94,20 +96,34 @@ cargo test --features boringssl --config boringssl/cargo-config.toml
 ### Chromium
 
 Chromium builds crates with GN rather than Cargo, listing sources and
-features explicitly. The `boringssl` backend needs only `bssl_sys`, `subtle`,
-`zeroize`, and `shake` (plus its `keccak` and `digest` dependencies). A
-target along the lines of Chromium's ATHM rule:
+features explicitly. With the `boringssl` backend, this crate needs only
+`mole_p256`, `subtle`, `zeroize`, and `shake` (plus its `keccak` and `digest`
+dependencies), and `mole_p256` only `bssl_sys`, `subtle`, and `zeroize`.
+Targets along the lines of Chromium's ATHM rule:
 
 ```gn
-rust_static_library("ec_act") {
-  crate_name = "ec_act"
-  crate_root = "src/lib.rs"
-  sources = [ ... every file under src/ except src/backend/rustcrypto.rs ... ]
+rust_static_library("mole_p256") {
+  crate_name = "mole_p256"
+  crate_root = "../mole-p256/src/lib.rs"
+  sources = [ ... every file under ../mole-p256/src/ except src/backend/rustcrypto.rs ... ]
   edition = "2024"
-  allow_unsafe = true  # bssl_sys FFI in src/backend/boringssl.rs, one volatile write elsewhere
+  allow_unsafe = true  # bssl_sys FFI in src/backend/boringssl.rs
   features = [ "boringssl" ]
   deps = [
     "//third_party/boringssl:bssl_sys",
+    "//third_party/rust/subtle/v2:lib",
+    "//third_party/rust/zeroize/v1:lib",
+  ]
+}
+
+rust_static_library("ec_act") {
+  crate_name = "ec_act"
+  crate_root = "src/lib.rs"
+  sources = [ ... every file under src/ ... ]
+  edition = "2024"
+  features = [ "boringssl" ]
+  deps = [
+    ":mole_p256",
     "//third_party/rust/shake/v0_1:lib",
     "//third_party/rust/subtle/v2:lib",
     "//third_party/rust/zeroize/v1:lib",
@@ -219,14 +235,9 @@ state, and Credential must match byte for byte. Further tests cover
 tampering, misdirected messages, amount and shape bounds, the identity checks
 of every statement, and RFC 9380 known answers for the primitives.
 
-Continuous integration (`.github/workflows/ci.yml`) runs on every change:
-format, clippy with warnings denied, tests and docs on both backends, the
-feature powerset, the library on the minimum Rust version (1.85), 32-bit and
-wasm targets, unused-dependency and `cargo deny` checks, and mutation testing
-of the lines the change touches. A weekly workflow
-(`.github/workflows/nightly.yml`) runs Miri over the pure-Rust primitives and
-coverage; on demand, it also runs mutation testing of the proof and encoding
-modules. `.cargo/mutants.toml` lists what mutation testing skips, and why.
+`mole-p256` has further tests of the group, hashing, and derivation layer,
+including its fixed-base tables. The [workspace README](../../README.md)
+describes continuous integration.
 
 ## License
 

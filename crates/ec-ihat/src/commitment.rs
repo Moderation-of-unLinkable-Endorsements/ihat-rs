@@ -10,11 +10,11 @@
 
 use alloc::vec::Vec;
 
+use mole_p256::hash::BackendHashExt;
 use subtle::{Choice, ConditionallySelectable, ConstantTimeEq};
 use zeroize::{Zeroize, Zeroizing};
 
 use crate::backend::{Backend, POINT_LENGTH, Point};
-use crate::hash::BackendHashExt;
 use crate::permutation;
 use crate::{Error, PROTOCOL_CONTEXT};
 

@@ -8,16 +8,21 @@
 
 use alloc::vec::Vec;
 
+use subtle::CtOption;
 use zeroize::Zeroizing;
 
 use crate::backend::{Backend, POINT_LENGTH, Point, SCALAR_LENGTH, Scalar};
 use crate::commitment::depth;
-use crate::hash::require;
 use crate::protocol::{
     ChallengeMessage, CommitMessage, Endorsement, Redemption, ResponseMessage, Signature,
     point_bytes,
 };
 use crate::{Error, NULLIFIER_LENGTH};
+
+/// Checks that a `CtOption` holds a value, mapping absence to `error`.
+pub(crate) fn require<T, E>(value: CtOption<T>, error: E) -> Result<T, E> {
+    value.into_option().ok_or(error)
+}
 
 /// Length of an encoded signature with its nullifier.
 const SIGNATURE_LENGTH: usize = 4 * SCALAR_LENGTH + NULLIFIER_LENGTH;

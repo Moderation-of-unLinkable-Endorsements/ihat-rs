@@ -27,8 +27,8 @@
 //! and points as 33-byte compressed SEC1 strings, and neither accepts an
 //! encoding of the identity element.
 //!
-//! ACT adds fixed-base multiplication for its proofs. This module is to move into a
-//! `mole-p256` crate shared with act-rs; see the TODO in `lib.rs`.
+//! ACT's proofs also multiply fixed bases by secret scalars, which a backend
+//! may speed up with precomputation through [`BackendFixedBaseExt`].
 
 use core::fmt::Debug;
 use core::ops::{Add, Mul, Neg, Sub};
@@ -226,10 +226,36 @@ pub trait Backend: 'static + Copy + Debug + Default + PartialEq + Eq + Send + Sy
     /// is unavailable.
     fn random_bytes(buf: &mut [u8]) -> Result<(), crate::Error>;
 
-    /// A fresh seed for [`SecretKey::from_seed`](crate::SecretKey::from_seed).
+    /// A fresh seed, for the `SecretKey::from_seed` of a protocol crate.
     fn generate_seed() -> Result<Zeroizing<[u8; SEED_LENGTH]>, crate::Error> {
         let mut seed = Zeroizing::new([0u8; SEED_LENGTH]);
         Self::random_bytes(seed.as_mut())?;
         Ok(seed)
     }
+}
+
+/// A point prepared for repeated multiplication by secret scalars.
+///
+/// ACT's ciphersuite generators `H1` to `H4` are the bases of most
+/// multiplications in its proofs, so a backend may precompute tables for
+/// them once per set of parameters. Multiplication must be constant time in
+/// the scalar; the point itself is public.
+pub trait FixedBase<P: Point>: Clone + Debug + Send + Sync {
+    /// Prepares `point`.
+    fn new(point: P) -> Self;
+
+    /// The point.
+    fn point(&self) -> &P;
+
+    /// `scalar * point`.
+    fn mul(&self, scalar: &P::Scalar) -> P;
+}
+
+/// Fixed-base multiplication, an extension of [`Backend`].
+///
+/// Each backend selects its own precomputed representation, independently
+/// of the shared hashing and derivation methods.
+pub trait BackendFixedBaseExt: Backend {
+    /// Points with precomputation.
+    type FixedBase: FixedBase<Self::Point>;
 }

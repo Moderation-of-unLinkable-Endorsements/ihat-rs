@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! The single source of randomness of the draft, `random(n)`.
+//! The single source of randomness of the drafts, `random(n)`.
 
 use core::marker::PhantomData;
 
@@ -24,22 +24,24 @@ use crate::backend::Backend;
 /// Every algorithm draws seeds from this interface only, so replaying a
 /// recorded byte string reproduces its outputs bit for bit; the test vectors
 /// rely on this.
-pub(crate) trait Random {
+pub trait Random {
     /// Fills `buf` with the next bytes.
     fn fill(&mut self, buf: &mut [u8]) -> Result<(), Error>;
 }
 
 /// The operating system's random number generator, through the backend.
-pub(crate) struct SystemRandom<B>(PhantomData<B>);
+#[derive(Default)]
+pub struct SystemRandom<B>(PhantomData<B>);
 
 impl<B: Backend> SystemRandom<B> {
-    pub(crate) fn new() -> Self {
+    /// The generator of backend `B`.
+    pub fn new() -> Self {
         Self(PhantomData)
     }
 }
 
 impl<B: Backend> Random for SystemRandom<B> {
     fn fill(&mut self, buf: &mut [u8]) -> Result<(), Error> {
-        B::random_bytes(buf).map_err(|_| Error::Entropy)
+        B::random_bytes(buf)
     }
 }

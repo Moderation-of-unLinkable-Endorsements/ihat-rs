@@ -4,13 +4,15 @@
 use alloc::vec::Vec;
 use core::fmt;
 
+use mole_p256::SEED_LENGTH as NSEED;
+use mole_p256::hash::BackendHashExt;
+use mole_p256::random::{Random, SystemRandom};
 use subtle::ConstantTimeEq;
 use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};
 
 use crate::backend::{Backend, POINT_LENGTH, Point, SCALAR_LENGTH, Scalar};
 use crate::commitment::{self, Key, Node};
-use crate::hash::{self, BackendHashExt, NSEED};
-use crate::random::{Random, SystemRandom};
+use crate::wire::require;
 use crate::{DefaultBackend, Error, NULLIFIER_LENGTH, PROTOCOL_CONTEXT};
 
 /// The protocol context under which every hash is computed.
@@ -87,7 +89,7 @@ impl<B: Backend> PublicKey<B> {
     /// Parses `SerializeElement(pkA)`.
     pub fn from_bytes(bytes: &[u8; POINT_LENGTH]) -> Result<Self, Error> {
         Ok(Self {
-            pk: hash::require(B::Point::from_bytes(bytes), Error::Deserialize)?,
+            pk: require(B::Point::from_bytes(bytes), Error::Deserialize)?,
         })
     }
 }
@@ -388,7 +390,7 @@ pub(crate) fn challenge_with<B: Backend, R: Random>(
     drop(derived);
     drop(rand);
 
-    let mut gamma = state.gamma1 * hash::require(state.gamma2.invert(), Error::Derive)?;
+    let mut gamma = state.gamma1 * require(state.gamma2.invert(), Error::Derive)?;
     let mut blinded_a = B::Point::mul_generator(&state.r1).add(&commitment.a.mul(&gamma));
     let mut blinded_c = commitment
         .c
@@ -456,7 +458,7 @@ pub fn finalize<B: Backend>(
     if !bool::from(lhs.ct_eq(&rhs)) {
         return Err(Error::Verify);
     }
-    let mut gamma = state.gamma1 * hash::require(state.gamma2.invert(), Error::Derive)?;
+    let mut gamma = state.gamma1 * require(state.gamma2.invert(), Error::Derive)?;
     let signature = Signature {
         c: state.c,
         s: gamma * response.s + state.r1,
