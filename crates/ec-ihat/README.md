@@ -1,4 +1,4 @@
-# ihat-rs
+# ec-ihat
 
 A Rust implementation of **EC-IHAT**, the issuer-hiding anonymous token of
 [draft-authors-mole-ec-ihat](https://moderation-of-unlinkable-endorsements.github.io/internet-drafts/draft-authors-mole-ec-ihat.html),

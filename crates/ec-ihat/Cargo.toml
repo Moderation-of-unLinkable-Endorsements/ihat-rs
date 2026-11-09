@@ -1,19 +1,16 @@
 [package]
-name = "ihat-rs"
-version = "0.1.0"
-edition = "2024"
-rust-version = "1.87"
+name = "ec-ihat"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
 license = "MIT OR Apache-2.0"
 readme = "README.md"
 description = "EC-IHAT: an issuer-hiding anonymous token over NIST P-256, per draft-authors-mole-ec-ihat"
-repository = "https://github.com/Moderation-of-unLinkable-Endorsements/ihat-rs"
+repository.workspace = true
 keywords = ["anonymous-tokens", "privacy", "blind-signatures", "zero-knowledge", "p256"]
 categories = ["cryptography", "no-std"]
 # Examples are listed below; others in `examples/` are not built.
 autoexamples = false
-
-[lib]
-name = "ec_ihat"
 
 [features]
 default = ["rustcrypto", "std"]
@@ -30,23 +27,21 @@ wasm_js = ["getrandom?/wasm_js"]
 boringssl = ["dep:bssl-sys"]
 
 [dependencies]
-subtle = { version = "2.6", default-features = false }
-zeroize = { version = "1.7", default-features = false, features = ["alloc"] }
+subtle.workspace = true
+zeroize.workspace = true
 
-p256 = { version = "0.14", default-features = false, features = ["arithmetic", "hash2curve", "alloc"], optional = true }
-sha2 = { version = "0.11", default-features = false, features = ["zeroize"], optional = true }
-getrandom = { version = "0.4", optional = true }
+p256 = { workspace = true, optional = true }
+sha2 = { workspace = true, optional = true }
+getrandom = { workspace = true, optional = true }
 
-bssl-sys = { version = "0.1.0", optional = true }
+bssl-sys = { workspace = true, optional = true }
 
 [dev-dependencies]
-hex = "0.4"
+hex.workspace = true
+criterion.workspace = true
 
 [package.metadata.docs.rs]
 features = ["rustcrypto"]
-
-[dev-dependencies.criterion]
-version = "0.8"
 
 [[example]]
 name = "demo"

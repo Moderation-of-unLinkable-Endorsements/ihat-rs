@@ -298,6 +298,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "ec-ihat"
+version = "0.1.0"
+dependencies = [
+ "bssl-sys",
+ "criterion",
+ "getrandom",
+ "hex",
+ "p256",
+ "sha2",
+ "subtle",
+ "zeroize",
+]
+
+[[package]]
 name = "ecdsa"
 version = "0.17.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -435,20 +449,6 @@ checksum = "27f864f10dfb56725ce5ce5472bc52252c8f93a4ab86327122cebf62c5f59a17"
 dependencies = [
  "subtle",
  "typenum",
- "zeroize",
-]
-
-[[package]]
-name = "ihat-rs"
-version = "0.1.0"
-dependencies = [
- "bssl-sys",
- "criterion",
- "getrandom",
- "hex",
- "p256",
- "sha2",
- "subtle",
  "zeroize",
 ]
 

@@ -41,7 +41,7 @@ jobs:
       # intrinsics use loads Miri cannot model. The FFI backend cannot run
       # at all.
       - run: >
-          cargo miri test --lib --
+          cargo miri test -p ec-ihat --lib --
           rustcrypto::point_arithmetic rustcrypto::derivations primitives::depths
           rustcrypto::expand_message_xmd_vectors rustcrypto::hash_to_curve_vectors
         env:
@@ -61,7 +61,12 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       # Fails if any viable mutant survives the test suite, apart from the
       # exclusions in .cargo/mutants.toml.
-      - run: cargo mutants -f src/protocol.rs -f src/commitment.rs -f src/permutation.rs -f src/hash.rs -f src/wire.rs -f src/storage.rs -j 2 --timeout 300
+      - run: >
+          cargo mutants -p ec-ihat
+          -f crates/ec-ihat/src/protocol.rs -f crates/ec-ihat/src/commitment.rs
+          -f crates/ec-ihat/src/permutation.rs -f crates/ec-ihat/src/hash.rs
+          -f crates/ec-ihat/src/wire.rs -f crates/ec-ihat/src/storage.rs
+          -j 2 --timeout 300
 
   coverage:
     name: Coverage
@@ -73,4 +78,4 @@ jobs:
           components: llvm-tools-preview
       - uses: taiki-e/install-action@cargo-llvm-cov
       - uses: Swatinem/rust-cache@v2
-      - run: cargo llvm-cov --lib --summary-only
+      - run: cargo llvm-cov --workspace --lib --summary-only

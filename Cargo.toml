@@ -1,0 +1,22 @@
+[workspace]
+resolver = "3"
+members = ["crates/*"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.87"
+repository = "https://github.com/Moderation-of-unLinkable-Endorsements/mole-p256-rs"
+
+[workspace.dependencies]
+subtle = { version = "2.6", default-features = false }
+zeroize = { version = "1.7", default-features = false, features = ["alloc"] }
+
+p256 = { version = "0.14", default-features = false, features = ["arithmetic", "hash2curve", "alloc"] }
+sha2 = { version = "0.11", default-features = false, features = ["zeroize"] }
+getrandom = { version = "0.4" }
+
+bssl-sys = { version = "0.1.0" }
+
+hex = "0.4"
+criterion = "0.8"
