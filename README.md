@@ -6,7 +6,7 @@ as a Cargo workspace:
 | Crate                         | Implements |
 |-------------------------------|------------|
 | [`ec-ihat`](crates/ec-ihat)   | EC-IHAT, the issuer-hiding anonymous token of [draft-authors-mole-ec-ihat](https://moderation-of-unlinkable-endorsements.github.io/internet-drafts/draft-authors-mole-ec-ihat.html) |
-| [`act-rs`](crates/ec-act)    | Anonymous Credit Tokens of [draft-authors-mole-act](https://moderation-of-unlinkable-endorsements.github.io/internet-drafts/draft-authors-mole-act.html) |
+| [`ec-act`](crates/ec-act)    | Anonymous Credit Tokens of [draft-authors-mole-act](https://moderation-of-unlinkable-endorsements.github.io/internet-drafts/draft-authors-mole-act.html) |
 
 Each crate's README describes its API, backends, design, and tests.
 

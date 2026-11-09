@@ -954,14 +954,14 @@ fn refund_message<B: BackendFixedBaseExt>(
 /// A raw [`SpendMessage`] cannot reach the refund signer:
 ///
 /// ```compile_fail
-/// use act::{Params, RefundMessage, SecretKey, SpendMessage};
+/// use ec_act::{Params, RefundMessage, SecretKey, SpendMessage};
 ///
 /// fn refund_unverified(
 ///     params: &Params,
 ///     key: &SecretKey,
 ///     spend: &SpendMessage,
-/// ) -> Result<RefundMessage, act::Error> {
-///     act::issue_refund(params, key, b"credential context", spend, 0)
+/// ) -> Result<RefundMessage, ec_act::Error> {
+///     ec_act::issue_refund(params, key, b"credential context", spend, 0)
 /// }
 /// ```
 pub fn issue_refund<B: BackendFixedBaseExt>(

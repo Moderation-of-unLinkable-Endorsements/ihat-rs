@@ -15,13 +15,13 @@
 //! Issues a Credential and runs the four spend shapes with their refunds,
 //! printing the message sizes and balances.
 
-use act::{
+use ec_act::{
     Backend, Credential, DefaultBackend, IssueRequestMessage, IssueResponseMessage, Params,
     RefundMessage, SecretKey, SpendMessage, finalize_issue, finalize_refund, issue_refund,
     issue_request, issue_response, prove_spend, verify_issue_request, verify_spend,
 };
 
-fn main() -> Result<(), act::Error> {
+fn main() -> Result<(), ec_act::Error> {
     let params: Params = Params::new(8)?;
     let ctx_cred = b"epoch-1";
     let key_seed = DefaultBackend::generate_seed()?;

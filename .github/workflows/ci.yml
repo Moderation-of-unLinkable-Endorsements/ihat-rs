@@ -39,7 +39,7 @@ jobs:
       - run: cargo test --workspace
       - run: cargo doc --workspace --no-deps
       - run: cargo run -p ec-ihat --example ihat_demo
-      - run: cargo run -p act-rs --example act_demo
+      - run: cargo run -p ec-act --example act_demo
 
   features:
     name: Feature powerset

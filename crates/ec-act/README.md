@@ -1,4 +1,4 @@
-# act-rs
+# ec-act
 
 A Rust implementation of **Anonymous Credit Tokens (ACT)**, the MOLE
 Credential scheme of
@@ -19,7 +19,7 @@ draft-authors-mole-rollatini, and reproduces its test vectors byte for byte.
 ## Usage
 
 ```rust
-use act::{Backend, DefaultBackend, Params, SecretKey};
+use ec_act::{Backend, DefaultBackend, Params, SecretKey};
 
 let params: Params = Params::new(8)?;       // balances below 2^8
 let ctx_cred = b"epoch-42";                 // agreed out of band
@@ -29,21 +29,21 @@ let secret_key: SecretKey = SecretKey::from_seed(&secret_key_seed)?;
 let public_key = secret_key.public_key();   // published
 
 // Issuance
-let (state, request) = act::issue_request(&params)?;
-let verified = act::verify_issue_request(&params, &request)?;
-let response = act::issue_response(&secret_key, ctx_cred, 100, verified)?;
-let credential = act::finalize_issue(&params, &public_key, ctx_cred, state, &response)?;
+let (state, request) = ec_act::issue_request(&params)?;
+let verified = ec_act::verify_issue_request(&params, &request)?;
+let response = ec_act::issue_response(&secret_key, ctx_cred, 100, verified)?;
+let credential = ec_act::finalize_issue(&params, &public_key, ctx_cred, state, &response)?;
 
 // Spending 30 credits with no top-up allowance; the Moderator returns 5.
 let ctx_spend = b"challenge-digest";
-let (state, spend) = act::prove_spend(&params, credential, ctx_cred, 30, 0, ctx_spend)?;
-let verified = act::verify_spend(&params, &secret_key, ctx_cred, ctx_spend, &spend)?;
+let (state, spend) = ec_act::prove_spend(&params, credential, ctx_cred, 30, 0, ctx_spend)?;
+let verified = ec_act::verify_spend(&params, &secret_key, ctx_cred, ctx_spend, &spend)?;
 // Grant verified.allowance(), then atomically record verified.nullifier()
 // together with the refund.
-let refund = act::issue_refund(verified, 5)?;
-let credential = act::finalize_refund(&params, &public_key, ctx_cred, state, &refund)?;
+let refund = ec_act::issue_refund(verified, 5)?;
+let credential = ec_act::finalize_refund(&params, &public_key, ctx_cred, state, &refund)?;
 assert_eq!(credential.balance(), 75);
-# Ok::<(), act::Error>(())
+# Ok::<(), ec_act::Error>(())
 ```
 
 Every message, the Credential, and both Client states have `to_bytes` and
@@ -99,8 +99,8 @@ features explicitly. The `boringssl` backend needs only `bssl_sys`, `subtle`,
 target along the lines of Chromium's ATHM rule:
 
 ```gn
-rust_static_library("act") {
-  crate_name = "act"
+rust_static_library("ec_act") {
+  crate_name = "ec_act"
   crate_root = "src/lib.rs"
   sources = [ ... every file under src/ except src/backend/rustcrypto.rs ... ]
   edition = "2024"

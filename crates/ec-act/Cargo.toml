@@ -1,5 +1,5 @@
 [package]
-name = "act-rs"
+name = "ec-act"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -8,9 +8,6 @@ description = "Anonymous Credit Tokens (ACT): a keyed-verification anonymous cre
 repository.workspace = true
 keywords = ["anonymous-credentials", "privacy", "credits", "zero-knowledge", "p256"]
 categories = ["cryptography", "no-std"]
-
-[lib]
-name = "act"
 
 [features]
 default = ["rustcrypto", "std"]
@@ -49,5 +46,5 @@ name = "act_demo"
 path = "examples/demo.rs"
 
 [[bench]]
-name = "act"
+name = "ec_act"
 harness = false

@@ -20,13 +20,13 @@
 
 use std::time::Duration;
 
-use act::backend::BackendFixedBaseExt;
-use act::{
+use criterion::{BatchSize, BenchmarkId, Criterion, criterion_group, criterion_main};
+use ec_act::backend::BackendFixedBaseExt;
+use ec_act::{
     ClientIssuanceState, ClientSpendState, Credential, Params, SecretKey, SpendMessage,
     finalize_issue, finalize_refund, issue_refund, issue_request, issue_response, prove_spend,
     verify_issue_request, verify_spend,
 };
-use criterion::{BatchSize, BenchmarkId, Criterion, criterion_group, criterion_main};
 
 const CTX_CRED: &[u8] = b"benchmark-context";
 const CTX_SPEND: &[u8] = b"benchmark-challenge-digest";
@@ -154,9 +154,9 @@ fn bench_backend<B: BackendFixedBaseExt>(c: &mut Criterion, backend: &str) {
 
 fn benches(c: &mut Criterion) {
     #[cfg(feature = "rustcrypto")]
-    bench_backend::<act::backend::rustcrypto::RustCrypto>(c, "rustcrypto");
+    bench_backend::<ec_act::backend::rustcrypto::RustCrypto>(c, "rustcrypto");
     #[cfg(feature = "boringssl")]
-    bench_backend::<act::backend::boringssl::BoringSsl>(c, "boringssl");
+    bench_backend::<ec_act::backend::boringssl::BoringSsl>(c, "boringssl");
 }
 
 criterion_group!(act, benches);
