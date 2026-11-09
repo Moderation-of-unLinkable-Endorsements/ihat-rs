@@ -1,11 +1,11 @@
 [package]
 name = "act-rs"
-version = "0.1.0"
-edition = "2024"
-rust-version = "1.87"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
 license = "Apache-2.0"
 description = "Anonymous Credit Tokens (ACT): a keyed-verification anonymous credential with a hidden credit balance, per draft-authors-mole-act"
-repository = "https://github.com/Moderation-of-unLinkable-Endorsements/act-rs"
+repository.workspace = true
 keywords = ["anonymous-credentials", "privacy", "credits", "zero-knowledge", "p256"]
 categories = ["cryptography", "no-std"]
 
@@ -28,21 +28,25 @@ wasm_js = ["ec-ihat/wasm_js"]
 boringssl = ["ec-ihat/boringssl"]
 
 [dependencies]
-ec-ihat = { package = "ihat-rs", version = "0.1.0", git = "https://github.com/Moderation-of-unLinkable-Endorsements/ihat-rs", rev = "3767cebd01936be5bfcfece75005c4524243cd08", default-features = false }
-subtle = { version = "2.6", default-features = false }
-zeroize = { version = "1.7", default-features = false, features = ["alloc"] }
+ec-ihat = { path = "../ec-ihat", version = "0.1.0", default-features = false }
+subtle.workspace = true
+zeroize.workspace = true
 
-p256 = { version = "0.14", default-features = false, features = ["arithmetic", "hash2curve", "alloc"], optional = true }
-shake = { version = "0.1", default-features = false, features = ["zeroize"] }
+p256 = { workspace = true, optional = true }
+shake.workspace = true
 
 [dev-dependencies]
-hex = "0.4"
+hex.workspace = true
+criterion.workspace = true
 
 [package.metadata.docs.rs]
 features = ["rustcrypto"]
 
-[dev-dependencies.criterion]
-version = "0.8"
+# Named apart from EC-IHAT's example, whose output shares the workspace's
+# target directory.
+[[example]]
+name = "act_demo"
+path = "examples/demo.rs"
 
 [[bench]]
 name = "act"

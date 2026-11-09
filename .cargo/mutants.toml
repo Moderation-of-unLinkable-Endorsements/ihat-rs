@@ -15,27 +15,30 @@
 # Configuration for `cargo mutants`. CI mutates the lines each change touches,
 # and the Deep checks workflow mutates whole modules on demand.
 
-# The BoringSSL backend builds only with the `boringssl` feature, which needs
-# a BoringSSL checkout, so the default build never compiles its mutants.
+# The BoringSSL backends build only with the `boringssl` feature, which needs
+# a BoringSSL checkout, so the default build never compiles their mutants.
 exclude_globs = ["crates/*/src/backend/boringssl.rs"]
 
-# Mutants that no test can kill. Patterns name the mutated operator, and a
-# column where a function has several alike, so the other mutants still run.
+# Mutants that no test can kill. Each pattern is anchored to its crate, since
+# the crates share type and function names, and names the mutated operator,
+# and a column where a function has several alike, so the other mutants
+# still run.
 exclude_re = [
+    # In ec-ihat:
     # Wiping secrets, redacting them from `Debug` output, and reserving
     # capacity before writing them have no observable effect.
-    "replace <impl Drop for SecretKey<B>>::drop with",
-    "replace <impl Zeroize for Signature<B>>::zeroize with",
-    "replace <impl fmt::Debug for SecretKey<B>>::fmt",
-    "replace [+*] with [-+*/] in (Anchor|Client)State<B>::to_bytes$",
+    "^crates/ec-ihat/.*replace <impl Drop for SecretKey<B>>::drop with",
+    "^crates/ec-ihat/.*replace <impl Zeroize for Signature<B>>::zeroize with",
+    "^crates/ec-ihat/.*replace <impl fmt::Debug for SecretKey<B>>::fmt",
+    "^crates/ec-ihat/.*replace [+*] with [-+*/] in (Anchor|Client)State<B>::to_bytes$",
     # `|` and `^` agree when no bit is set on both sides: a byte is not both
     # 0 and 1, a shifted value has no low byte, and a length is below its
     # form's tag bits.
-    "replace [|] with \\^ in is_valid_permutation_encoding$",
-    "replace [|] with \\^ in (Reader<'a>::length|length_prefix)$",
+    "^crates/ec-ihat/.*replace [|] with \\^ in is_valid_permutation_encoding$",
+    "^crates/ec-ihat/.*replace [|] with \\^ in (Reader<'a>::length|length_prefix)$",
     # Both `c` and `y` zero needs `c` to hash to zero; both `A` and `C` the
     # identity needs the discrete logarithm of `Z`.
-    "replace [|] with \\^ in verify_signature$",
+    "^crates/ec-ihat/.*replace [|] with \\^ in verify_signature$",
     # The carried node of `vec_equivocate` has no partner, so its shift is
     # already zero.
     "^crates/ec-ihat/src/commitment.rs:[0-9]+:45: replace - with [+/] in vec_equivocate$",
@@ -45,12 +48,24 @@ exclude_re = [
     # `prove_issuer` rejects an index outside the Anchor Set with the same
     # error, and an Anchor Set of 65535 keys takes minutes to redeem in a
     # debug build.
-    "replace [|][|] with && in redeem_with$",
-    "replace > with (==|>=) in redeem_with$",
+    "^crates/ec-ihat/.*replace [|][|] with && in redeem_with$",
+    "^crates/ec-ihat/.*replace > with (==|>=) in redeem_with$",
     # Breaking a round or the validity check can stop the permutation walk
     # from terminating. Whether the tests fail first or time out depends on
     # their random keys.
-    "replace \\^= with [|&]= in (left|right)_round$",
-    "replace [|] with & in is_valid_permutation_encoding$",
-    "replace from_encoding -> Option<B::Point> with None$",
+    "^crates/ec-ihat/.*replace \\^= with [|&]= in (left|right)_round$",
+    "^crates/ec-ihat/.*replace [|] with & in is_valid_permutation_encoding$",
+    "^crates/ec-ihat/.*replace from_encoding -> Option<B::Point> with None$",
+
+    # In ec-act, mutants that only skip or misplace a wipe of secret data.
+    # `RelationWriter::put` grows its buffer by hand to wipe the old one.
+    # These mutants change when or how far it grows. None changes the
+    # output: `extend_from_slice` grows the buffer itself, unwiped, or the
+    # buffer doubles on every write until the mutant times out.
+    "^crates/ec-act/.*replace < with (==|>|<=) in RelationWriter<'a>::put$",
+    "^crates/ec-act/.*replace - with [+] in RelationWriter<'a>::put$",
+    "^crates/ec-act/.*replace [*] with [+] in RelationWriter<'a>::put$",
+    "^crates/ec-act/.*replace [+] with [*] in RelationWriter<'a>::put$",
+    # `Commitments` only wipes its points when dropped.
+    "^crates/ec-act/.*replace <impl Drop for Commitments<P>>::drop with",
 ]

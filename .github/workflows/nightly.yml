@@ -47,6 +47,15 @@ jobs:
         env:
           RUSTFLAGS: --cfg sha2_backend="soft"
           MIRIFLAGS: -Zmiri-disable-isolation
+      # Tests that need SHAKE128 are left out for the same reason.
+      - run: >
+          cargo miri test -p act-rs --lib --
+          rustcrypto::point_arithmetic rustcrypto::fixed_base_tables
+          rustcrypto::scalar_arithmetic rustcrypto::coefficients
+          rustcrypto::keys_round_trip rustcrypto::derivations
+        env:
+          RUSTFLAGS: --cfg sha2_backend="soft"
+          MIRIFLAGS: -Zmiri-disable-isolation
 
   mutants:
     name: Mutation testing (proofs, permutation, encodings, and storage)
@@ -66,6 +75,11 @@ jobs:
           -f crates/ec-ihat/src/protocol.rs -f crates/ec-ihat/src/commitment.rs
           -f crates/ec-ihat/src/permutation.rs -f crates/ec-ihat/src/hash.rs
           -f crates/ec-ihat/src/wire.rs -f crates/ec-ihat/src/storage.rs
+          -j 2 --timeout 300
+      - run: >
+          cargo mutants -p act-rs
+          -f crates/ec-act/src/statements.rs -f crates/ec-act/src/sigma.rs
+          -f crates/ec-act/src/hash.rs -f crates/ec-act/src/wire.rs
           -j 2 --timeout 300
 
   coverage:

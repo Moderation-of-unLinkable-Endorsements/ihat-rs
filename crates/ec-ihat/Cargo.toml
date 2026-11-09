@@ -44,7 +44,8 @@ criterion.workspace = true
 features = ["rustcrypto"]
 
 [[example]]
-name = "demo"
+name = "ihat_demo"
+path = "examples/demo.rs"
 
 [[bench]]
 name = "ec_ihat"

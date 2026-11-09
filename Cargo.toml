@@ -15,6 +15,7 @@ zeroize = { version = "1.7", default-features = false, features = ["alloc"] }
 p256 = { version = "0.14", default-features = false, features = ["arithmetic", "hash2curve", "alloc"] }
 sha2 = { version = "0.11", default-features = false, features = ["zeroize"] }
 getrandom = { version = "0.4" }
+shake = { version = "0.1", default-features = false, features = ["zeroize"] }
 
 bssl-sys = { version = "0.1.0" }
 
