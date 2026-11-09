@@ -1,0 +1,50 @@
+[package]
+name = "ec-act"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license = "Apache-2.0"
+description = "Anonymous Credit Tokens (ACT): a keyed-verification anonymous credential with a hidden credit balance, per draft-authors-mole-act"
+repository.workspace = true
+keywords = ["anonymous-credentials", "privacy", "credits", "zero-knowledge", "p256"]
+categories = ["cryptography", "no-std"]
+
+[features]
+default = ["rustcrypto", "std"]
+# Pure-Rust backend on the RustCrypto `p256` stack.
+rustcrypto = ["ec-ihat/rustcrypto", "dep:p256"]
+# Standard library support; with `rustcrypto`, also enables the
+# precomputed generator tables of `p256`.
+std = ["ec-ihat/std", "p256?/std", "p256?/precomputed-tables"]
+# Randomness from the JavaScript host on `wasm32-unknown-unknown`, for the
+# `rustcrypto` backend; other bare targets need a `getrandom` custom backend.
+wasm_js = ["ec-ihat/wasm_js"]
+# BoringSSL backend over the `bssl-sys` FFI bindings. `bssl-sys` is not
+# published; patch it to a BoringSSL checkout (see README). SHAKE128 comes
+# from the `shake` crate until BoringSSL exports its Keccak.
+boringssl = ["ec-ihat/boringssl"]
+
+[dependencies]
+ec-ihat = { path = "../ec-ihat", version = "0.1.0", default-features = false }
+subtle.workspace = true
+zeroize.workspace = true
+
+p256 = { workspace = true, optional = true }
+shake.workspace = true
+
+[dev-dependencies]
+hex.workspace = true
+criterion.workspace = true
+
+[package.metadata.docs.rs]
+features = ["rustcrypto"]
+
+# Named apart from EC-IHAT's example, whose output shares the workspace's
+# target directory.
+[[example]]
+name = "act_demo"
+path = "examples/demo.rs"
+
+[[bench]]
+name = "ec_act"
+harness = false

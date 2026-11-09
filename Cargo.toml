@@ -1,56 +1,23 @@
-[package]
-name = "ihat-rs"
+[workspace]
+resolver = "3"
+members = ["crates/*"]
+
+[workspace.package]
 version = "0.1.0"
 edition = "2024"
 rust-version = "1.87"
-license = "MIT OR Apache-2.0"
-readme = "README.md"
-description = "EC-IHAT: an issuer-hiding anonymous token over NIST P-256, per draft-authors-mole-ec-ihat"
-repository = "https://github.com/Moderation-of-unLinkable-Endorsements/ihat-rs"
-keywords = ["anonymous-tokens", "privacy", "blind-signatures", "zero-knowledge", "p256"]
-categories = ["cryptography", "no-std"]
-# Examples are listed below; others in `examples/` are not built.
-autoexamples = false
+repository = "https://github.com/Moderation-of-unLinkable-Endorsements/mole-p256-rs"
 
-[lib]
-name = "ec_ihat"
-
-[features]
-default = ["rustcrypto", "std"]
-# Pure-Rust backend on the RustCrypto `p256` stack.
-rustcrypto = ["dep:p256", "dep:sha2", "dep:getrandom"]
-# Standard library support; with `rustcrypto`, also enables the
-# precomputed generator tables of `p256`.
-std = ["p256?/std", "p256?/precomputed-tables", "getrandom?/std"]
-# Randomness from the JavaScript host on `wasm32-unknown-unknown`, for the
-# `rustcrypto` backend; other bare targets need a `getrandom` custom backend.
-wasm_js = ["getrandom?/wasm_js"]
-# BoringSSL backend over the `bssl-sys` FFI bindings. `bssl-sys` is not
-# published; patch it to a BoringSSL checkout (see README).
-boringssl = ["dep:bssl-sys"]
-
-[dependencies]
+[workspace.dependencies]
 subtle = { version = "2.6", default-features = false }
 zeroize = { version = "1.7", default-features = false, features = ["alloc"] }
 
-p256 = { version = "0.14", default-features = false, features = ["arithmetic", "hash2curve", "alloc"], optional = true }
-sha2 = { version = "0.11", default-features = false, features = ["zeroize"], optional = true }
-getrandom = { version = "0.4", optional = true }
+p256 = { version = "0.14", default-features = false, features = ["arithmetic", "hash2curve", "alloc"] }
+sha2 = { version = "0.11", default-features = false, features = ["zeroize"] }
+getrandom = { version = "0.4" }
+shake = { version = "0.1", default-features = false, features = ["zeroize"] }
 
-bssl-sys = { version = "0.1.0", optional = true }
+bssl-sys = { version = "0.1.0" }
 
-[dev-dependencies]
 hex = "0.4"
-
-[package.metadata.docs.rs]
-features = ["rustcrypto"]
-
-[dev-dependencies.criterion]
-version = "0.8"
-
-[[example]]
-name = "demo"
-
-[[bench]]
-name = "ec_ihat"
-harness = false
+criterion = "0.8"
