@@ -68,4 +68,8 @@ exclude_re = [
     "^crates/ec-act/.*replace [+] with [*] in RelationWriter<'a>::put$",
     # `Commitments` only wipes its points when dropped.
     "^crates/ec-act/.*replace <impl Drop for Commitments<P>>::drop with",
+    # Nor do the wipes of the signing key and of secret points.
+    "^crates/ec-act/.*replace <impl Zeroize for SecretKey<B>>::zeroize with",
+    "^crates/ec-act/.*replace <impl Drop for SecretKey<B>>::drop with",
+    "^crates/ec-act/.*replace <impl Drop for SecretPoint<P>>::drop with",
 ]

@@ -92,6 +92,15 @@ fn spend<B: BackendFixedBaseExt>(
     assert_eq!(state.k_prime, expected);
     let message = SpendMessage::from_bytes(&setup.params, &message.to_bytes()).unwrap();
     let verified = verify_spend(&setup.params, &setup.key, CTX, CHALLENGE, &message).unwrap();
+    // The Moderator grants and records what the Client sent.
+    assert_eq!(verified.nullifier(), message.nullifier());
+    assert_eq!((verified.amount(), verified.allowance()), (s, a));
+    let debug = alloc::format!("{verified:?}");
+    assert!(
+        debug.starts_with("VerifiedSpend { nullifier: ")
+            && debug.ends_with(&alloc::format!("amount: {s}, allowance: {a}, .. }}")),
+        "{debug}"
+    );
     let refund = issue_refund(verified, t).unwrap();
     let refund = RefundMessage::from_bytes(&setup.params, &refund.to_bytes()).unwrap();
     let credential =
@@ -547,6 +556,12 @@ fn keys_round_trip<B: Backend>() {
     assert_ne!(
         seeded.public_key(),
         SecretKey::<B>::from_seed(&[8; 48]).unwrap().public_key()
+    );
+    // `Debug` shows the public key and leaves out the secret one.
+    let debug = alloc::format!("{seeded:?}");
+    assert!(
+        debug.starts_with("SecretKey { pk: ") && debug.ends_with(", .. }"),
+        "{debug}"
     );
 }
 

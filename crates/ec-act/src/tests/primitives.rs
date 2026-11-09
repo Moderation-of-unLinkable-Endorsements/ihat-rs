@@ -254,6 +254,7 @@ fn fixed_base_tables<B: BackendFixedBaseExt>() {
     let h1 = B::hash_to_curve(&[b"GenH1"], &[hash::DST_HASH_TO_GROUP]).unwrap();
     let table = B::FixedBase::new(h1.clone());
     assert_eq!(table.point(), &h1);
+    assert!(alloc::format!("{table:?}").starts_with("FixedPoint("));
     let mut scalars = alloc::vec![
         B::Scalar::default(),
         B::Scalar::from(1),
