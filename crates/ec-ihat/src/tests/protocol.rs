@@ -599,9 +599,9 @@ fn errors_display_distinct_messages() {
 
 fn entropy_failure_is_an_error<B: Backend>() {
     struct Failing;
-    impl crate::random::Random for Failing {
-        fn fill(&mut self, _: &mut [u8]) -> Result<(), Error> {
-            Err(Error::Entropy)
+    impl mole_p256::random::Random for Failing {
+        fn fill(&mut self, _: &mut [u8]) -> Result<(), mole_p256::Error> {
+            Err(mole_p256::Error::Entropy)
         }
     }
     assert!(matches!(
@@ -622,3 +622,39 @@ backend_tests!(
     identity_public_keys_are_rejected,
     only_compressed_prefixes_decode,
 );
+
+/// With both backends enabled, a redemption runs across them.
+#[cfg(all(feature = "rustcrypto", feature = "boringssl"))]
+mod parity {
+    use crate::backend::boringssl::BoringSsl;
+    use crate::backend::rustcrypto::RustCrypto;
+    use crate::tests::{os_rng, random_key};
+    use crate::{PublicKey, SecretKey};
+
+    #[test]
+    fn redemptions_interoperate() {
+        let keys: [SecretKey<RustCrypto>; 3] =
+            core::array::from_fn(|_| random_key(&mut os_rng::<RustCrypto>()));
+        let anchor_rc: [PublicKey<RustCrypto>; 3] = core::array::from_fn(|i| keys[i].public_key());
+        let anchor_bssl: [PublicKey<BoringSsl>; 3] =
+            core::array::from_fn(|i| PublicKey::from_bytes(&anchor_rc[i].to_bytes()).unwrap());
+        // The Anchor on RustCrypto, the Client on BoringSSL.
+        let (state, commitment) = crate::commit::<RustCrypto>(b"iss").unwrap();
+        let commitment =
+            crate::CommitMessage::<BoringSsl>::from_bytes(&commitment.to_bytes()).unwrap();
+        let (client, challenge) =
+            crate::challenge(&anchor_bssl[2], b"iss", b"red", &commitment).unwrap();
+        let challenge =
+            crate::ChallengeMessage::<RustCrypto>::from_bytes(&challenge.to_bytes()).unwrap();
+        let response = crate::respond(&keys[2], state, &challenge).unwrap();
+        let response =
+            crate::ResponseMessage::<BoringSsl>::from_bytes(&response.to_bytes()).unwrap();
+        let endorsement = crate::finalize(&anchor_bssl[2], client, &response).unwrap();
+        let redemption =
+            crate::redeem(&anchor_bssl, 2, endorsement, b"iss", b"red", b"digest").unwrap();
+        // The Moderator on RustCrypto.
+        let redemption =
+            crate::Redemption::<RustCrypto>::from_bytes(&redemption.to_bytes(), 3).unwrap();
+        crate::verify_redemption(&anchor_rc, &redemption, b"iss", b"red", b"digest").unwrap();
+    }
+}

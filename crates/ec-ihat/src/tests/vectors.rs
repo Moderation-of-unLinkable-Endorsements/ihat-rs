@@ -7,9 +7,10 @@ use alloc::collections::BTreeMap;
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 
+use mole_p256::hash::BackendHashExt;
+
 use super::Replay;
 use crate::backend::{Backend, POINT_LENGTH, Point, Scalar};
-use crate::hash::BackendHashExt;
 use crate::permutation;
 use crate::protocol::{
     ChallengeMessage, CommitMessage, Endorsement, PublicKey, Redemption, ResponseMessage,

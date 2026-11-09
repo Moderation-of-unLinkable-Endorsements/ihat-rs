@@ -41,18 +41,22 @@ jobs:
       # intrinsics use loads Miri cannot model. The FFI backend cannot run
       # at all.
       - run: >
-          cargo miri test -p ec-ihat --lib --
-          rustcrypto::point_arithmetic rustcrypto::derivations primitives::depths
+          cargo miri test -p mole-p256 --lib --
+          rustcrypto::point_arithmetic rustcrypto::derivations rustcrypto::fixed_base_tables
           rustcrypto::expand_message_xmd_vectors rustcrypto::hash_to_curve_vectors
+        env:
+          RUSTFLAGS: --cfg sha2_backend="soft"
+          MIRIFLAGS: -Zmiri-disable-isolation
+      - run: cargo miri test -p ec-ihat --lib -- components::depths
         env:
           RUSTFLAGS: --cfg sha2_backend="soft"
           MIRIFLAGS: -Zmiri-disable-isolation
       # Tests that need SHAKE128 are left out for the same reason.
       - run: >
           cargo miri test -p ec-act --lib --
-          rustcrypto::point_arithmetic rustcrypto::fixed_base_tables
-          rustcrypto::scalar_arithmetic rustcrypto::coefficients
-          rustcrypto::keys_round_trip rustcrypto::derivations
+          rustcrypto::point_arithmetic rustcrypto::scalar_arithmetic
+          rustcrypto::coefficients rustcrypto::keys_round_trip
+          rustcrypto::derivations
         env:
           RUSTFLAGS: --cfg sha2_backend="soft"
           MIRIFLAGS: -Zmiri-disable-isolation
@@ -71,9 +75,13 @@ jobs:
       # Fails if any viable mutant survives the test suite, apart from the
       # exclusions in .cargo/mutants.toml.
       - run: >
+          cargo mutants -p mole-p256
+          -f crates/mole-p256/src/hash.rs
+          -j 2 --timeout 300
+      - run: >
           cargo mutants -p ec-ihat
           -f crates/ec-ihat/src/protocol.rs -f crates/ec-ihat/src/commitment.rs
-          -f crates/ec-ihat/src/permutation.rs -f crates/ec-ihat/src/hash.rs
+          -f crates/ec-ihat/src/permutation.rs
           -f crates/ec-ihat/src/wire.rs -f crates/ec-ihat/src/storage.rs
           -j 2 --timeout 300
       - run: >

@@ -24,14 +24,17 @@
 
 use alloc::vec::Vec;
 
-use ec_ihat::hash::BackendHashExt;
+use mole_p256::hash::BackendHashExt;
+use mole_p256::random::Random;
+// TODO(boringssl): bind BoringSSL's Keccak once it is exported through a
+// public header and `bssl-sys`. For now we use the `shake` crate for both the
+// `boringssl` and `rustcrypto` backends.
 use shake::{ExtendableOutput, Shake128, Update, XofReader};
 use subtle::ConstantTimeEq;
 use zeroize::{Zeroize, Zeroizing};
 
 use crate::backend::{Backend, ORDER, POINT_LENGTH, Point, SCALAR_LENGTH, Scalar};
 use crate::hash::{self, NSEED};
-use crate::random::Random;
 use crate::{Error, PROTOCOL_CONTEXT};
 
 /// The Sigma protocol ciphersuite identifier, carried in every tag.

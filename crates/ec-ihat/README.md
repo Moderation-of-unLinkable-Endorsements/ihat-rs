@@ -69,9 +69,11 @@ failure. Decoding a copy does not make consumed state usable again.
 
 ## Backends
 
-All group and hash operations go through the [`Backend`](src/backend/mod.rs)
-trait, as in act-rs, the Rust implementation of the MoLE Anonymous Credit
-Tokens. Two implementations are provided, selected by Cargo feature:
+All group and hash operations go through the `Backend` trait of
+[`mole-p256`](../mole-p256), the P-256 layer shared with `ec-act`, the Rust
+implementation of the MOLE Anonymous Credit Tokens; this crate re-exports it
+as `ec_ihat::backend`. Two implementations are provided, selected by Cargo
+feature:
 
 | Feature                | Curve, SHA-256, hash-to-curve, randomness |
 |------------------------|-------------------------------------------|
@@ -95,8 +97,8 @@ arithmetic and compares its square.
 `bssl-sys` is not published on crates.io (the registry entry is a
 placeholder), so it must be patched to a BoringSSL checkout built with Rust
 bindings for the host. `scripts/build-boringssl.sh` does that at the commit
-this crate is tested against (`5112448a`, September 2026, the same as
-act-rs) and writes a Cargo config with the patch:
+the workspace is tested against (`5112448a`, September 2026) and writes a
+Cargo config with the patch:
 
 ```sh
 cargo install bindgen-cli          # plus git, cmake, ninja, and clang
@@ -106,9 +108,8 @@ export BORINGSSL_BUILD_DIR=$PWD/boringssl/build
 cargo test --features boringssl --config boringssl/cargo-config.toml
 ```
 
-A BoringSSL tree already built for act-rs works too: pass its
-`cargo-config.toml` and build directory instead. The patch rewrites
-`Cargo.lock`; restore it before committing.
+Run these from the root of the workspace. The patch rewrites `Cargo.lock`;
+restore it before committing.
 
 The crate is `no_std` with `alloc`. The `std` feature enables the standard
 library in `p256` and `getrandom`, and the precomputed generator tables of
@@ -116,12 +117,10 @@ library in `p256` and `getrandom`, and the precomputed generator tables of
 
 ## Design
 
-* **Hashing and derivation** (`src/hash.rs`) are act-rs's functions with the
-  protocol context as a parameter: `expand_message_xmd`, `HashToScalar`,
-  `HashToGroup`, and the draft's `DeriveScalars`, `ExpandScalars`,
-  `DeriveNonces`, and `DeriveKeyPair`. Together with the backend and the
-  random source they are meant to move into a crate shared with act-rs,
-  `mole-p256`.
+* **Hashing and derivation** come from `mole-p256`, shared with `ec-act`,
+  under this crate's protocol context `EC-IHATv1-P256-SHA256`:
+  `expand_message_xmd`, `HashToScalar`, `HashToGroup`, and the draft's
+  `DeriveScalars`, `ExpandScalars`, `DeriveNonces`, and `DeriveKeyPair`.
 * **The permutation** (`src/permutation.rs`) implements `PermuteBytes`,
   `UnpermuteBytes`, `P`, `Pinv`, and `PermutationPair`. `PermutationPair`
   computes both one-step permutations on each iteration, selects one with
@@ -179,24 +178,18 @@ generator, so every key, message, state, Endorsement, and redemption must
 match byte for byte. Further tests cover issuance and redemption at every
 position of Anchor Sets of 1 to 9 keys, tampering with every field of a
 redemption, other contexts, digests, and Anchor Sets, the identity checks of
-`Verify` and `VerifyIssuer`, the x-coordinate test against point decoding,
-and RFC 9380 known answers for the primitives.
+`Verify` and `VerifyIssuer`, and the permutation and commitment tree;
+`mole-p256` tests the x-coordinate test against point decoding, the RFC 9380
+known answers, and the other primitives.
 
-Continuous integration (`.github/workflows/ci.yml`) runs format, clippy with
-warnings denied, tests and docs on both backends, the feature powerset, the
-library on the minimum Rust version (1.85), 32-bit and wasm targets,
-unused-dependency and `cargo deny` checks, and mutation testing of the lines
-each change touches. A weekly workflow (`.github/workflows/nightly.yml`) runs
-Miri over the pure-Rust primitives and coverage; on demand, it also runs
-mutation testing of whole modules. `.cargo/mutants.toml` lists what mutation
-testing skips, and why.
+The [workspace README](../../README.md) describes continuous integration.
 
 ## License
 
 Licensed under either of [Apache License, Version 2.0](LICENSE-APACHE) or
 [MIT license](LICENSE-MIT) at your option, except the files that carry a
-Google LLC Apache 2.0 header, which are adapted from act-rs and are under
-the Apache License, Version 2.0 only.
+Google LLC Apache 2.0 header, which are adapted from ACT and are under the
+Apache License, Version 2.0 only.
 
 Unless you explicitly state otherwise, any contribution intentionally submitted
 for inclusion in the work by you, as defined in the Apache-2.0 license, shall be

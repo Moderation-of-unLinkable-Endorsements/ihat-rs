@@ -687,9 +687,9 @@ fn credentials_zeroize<B: BackendFixedBaseExt>() {
 
 fn entropy_failure_is_an_error<B: BackendFixedBaseExt>() {
     struct Failing;
-    impl crate::random::Random for Failing {
-        fn fill(&mut self, _: &mut [u8]) -> Result<(), Error> {
-            Err(Error::Entropy)
+    impl mole_p256::random::Random for Failing {
+        fn fill(&mut self, _: &mut [u8]) -> Result<(), mole_p256::Error> {
+            Err(mole_p256::Error::Entropy)
         }
     }
     let params = Params::<B>::new(4).unwrap();

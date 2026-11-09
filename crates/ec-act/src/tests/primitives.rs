@@ -16,11 +16,12 @@
 
 use alloc::vec::Vec;
 
-use ec_ihat::hash::{BackendHashExt, Error as HashError};
+use mole_p256::Error as HashError;
+use mole_p256::hash::BackendHashExt;
 use shake::{ExtendableOutput, Shake128, Update, XofReader};
 
 use crate::PROTOCOL_CONTEXT;
-use crate::backend::{Backend, BackendFixedBaseExt, Point, SCALAR_LENGTH, Scalar};
+use crate::backend::{Backend, Point, SCALAR_LENGTH, Scalar};
 use crate::hash::{self, XmdPrefix};
 use crate::sigma::{self, MINUS_ONE, ONE, coefficient, order_minus};
 
@@ -247,39 +248,6 @@ fn point_arithmetic<B: Backend>() {
     assert!(bool::from(zeroized.is_identity()));
 }
 
-fn fixed_base_tables<B: BackendFixedBaseExt>() {
-    use crate::backend::FixedBase;
-    // A generator computed directly, so that this test needs no SHAKE128
-    // and can run under Miri.
-    let h1 = B::hash_to_curve(&[b"GenH1"], &[hash::DST_HASH_TO_GROUP]).unwrap();
-    let table = B::FixedBase::new(h1.clone());
-    assert_eq!(table.point(), &h1);
-    assert!(alloc::format!("{table:?}").starts_with("FixedPoint("));
-    let mut scalars = alloc::vec![
-        B::Scalar::default(),
-        B::Scalar::from(1),
-        B::Scalar::from(2),
-        B::Scalar::from(15),
-        B::Scalar::from(16),
-        B::Scalar::from(u64::MAX),
-        B::Scalar::from_bytes(&MINUS_ONE).unwrap(),
-    ];
-    // Interpretation under Miri is slow; a couple of hashed scalars suffice
-    // there, since the fixed cases already cover every digit path.
-    let hashed = if cfg!(miri) { 2 } else { 32 };
-    for i in 0..hashed {
-        scalars.push(B::hash_to_scalar_with_dst(&[&[i]], &[b"fixed-base-test"]));
-    }
-    for scalar in scalars {
-        assert_eq!(
-            table.mul(&scalar),
-            h1.mul(&scalar),
-            "{:?}",
-            scalar.to_bytes()
-        );
-    }
-}
-
 fn derivations<B: Backend>() {
     for dst in [hash::DST_HASH_TO_GROUP, hash::DST_HASH_TO_SCALAR] {
         assert!(dst.ends_with(crate::PROTOCOL_CONTEXT));
@@ -374,7 +342,6 @@ backend_tests!(
     coefficients,
     scalar_arithmetic,
     point_arithmetic,
-    fixed_base_tables,
     derivations,
 );
 
@@ -384,7 +351,7 @@ mod parity {
     use crate::backend::boringssl::BoringSsl;
     use crate::backend::rustcrypto::RustCrypto;
     use crate::backend::{Point, Scalar};
-    use ec_ihat::hash::BackendHashExt;
+    use mole_p256::hash::BackendHashExt;
 
     #[test]
     fn generators_and_hashes_agree() {

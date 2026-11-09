@@ -1,0 +1,41 @@
+[package]
+name = "mole-p256"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license = "Apache-2.0"
+readme = "README.md"
+description = "The P-256 group, hashing, and randomness beneath the MOLE protocol crates ec-ihat and ec-act"
+repository.workspace = true
+keywords = ["p256", "hash-to-curve", "privacy", "zero-knowledge", "boringssl"]
+categories = ["cryptography", "no-std"]
+
+[features]
+default = ["rustcrypto", "std"]
+# Pure-Rust backend on the RustCrypto `p256` stack.
+rustcrypto = ["dep:p256", "dep:sha2", "dep:getrandom"]
+# Standard library support; with `rustcrypto`, also enables the
+# precomputed generator tables of `p256`.
+std = ["p256?/std", "p256?/precomputed-tables", "getrandom?/std"]
+# Randomness from the JavaScript host on `wasm32-unknown-unknown`, for the
+# `rustcrypto` backend; other bare targets need a `getrandom` custom backend.
+wasm_js = ["getrandom?/wasm_js"]
+# BoringSSL backend over the `bssl-sys` FFI bindings. `bssl-sys` is not
+# published; patch it to a BoringSSL checkout (see README).
+boringssl = ["dep:bssl-sys"]
+
+[dependencies]
+subtle.workspace = true
+zeroize.workspace = true
+
+p256 = { workspace = true, optional = true }
+sha2 = { workspace = true, optional = true }
+getrandom = { workspace = true, optional = true }
+
+bssl-sys = { workspace = true, optional = true }
+
+[dev-dependencies]
+hex.workspace = true
+
+[package.metadata.docs.rs]
+features = ["rustcrypto"]

@@ -24,7 +24,7 @@ exclude_globs = ["crates/*/src/backend/boringssl.rs"]
 # and a column where a function has several alike, so the other mutants
 # still run.
 exclude_re = [
-    # In ec-ihat:
+    # In ec-ihat and mole-p256:
     # Wiping secrets, redacting them from `Debug` output, and reserving
     # capacity before writing them have no observable effect.
     "^crates/ec-ihat/.*replace <impl Drop for SecretKey<B>>::drop with",
@@ -44,7 +44,7 @@ exclude_re = [
     "^crates/ec-ihat/src/commitment.rs:[0-9]+:45: replace - with [+/] in vec_equivocate$",
     # `pad_to_block` only ever pads less than one block, where adding the
     # block size and reducing by it agree.
-    "^crates/ec-ihat/src/hash.rs:[0-9]+:23: replace % with [+] in pad_to_block$",
+    "^crates/mole-p256/src/hash.rs:[0-9]+:23: replace % with [+] in pad_to_block$",
     # `prove_issuer` rejects an index outside the Anchor Set with the same
     # error, and an Anchor Set of 65535 keys takes minutes to redeem in a
     # debug build.

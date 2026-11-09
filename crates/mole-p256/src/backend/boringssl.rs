@@ -868,3 +868,26 @@ impl fmt::Display for Hex<'_> {
         Ok(())
     }
 }
+
+/// A point without precomputation: BoringSSL's public API offers tables
+/// for the generator only, which `EC_POINT_mul` uses on its own.
+#[derive(Clone, Debug)]
+pub struct FixedPoint(Point);
+
+impl super::FixedBase<Point> for FixedPoint {
+    fn new(point: Point) -> Self {
+        Self(point)
+    }
+
+    fn point(&self) -> &Point {
+        &self.0
+    }
+
+    fn mul(&self, scalar: &Scalar) -> Point {
+        super::Point::mul(&self.0, scalar)
+    }
+}
+
+impl super::BackendFixedBaseExt for BoringSsl {
+    type FixedBase = FixedPoint;
+}

@@ -1,0 +1,48 @@
+# mole-p256
+
+The P-256 group, hashing, and randomness beneath the Rust implementations of
+the MOLE protocols, [`ec-ihat`](../ec-ihat) and [`ec-act`](../ec-act). It
+implements no protocol of its own, and its API serves those crates and
+changes with them.
+
+> **Warning:** This code has not been audited. Use it at your own risk.
+
+* `backend`: the `Backend` trait over the P-256 scalar field and group,
+  SHA-256, `P256_XMD:SHA-256_SSWU_RO_` hash-to-curve, and the operating
+  system's random number generator, and `BackendFixedBaseExt`, which lets a
+  backend precompute tables for bases it multiplies repeatedly.
+* `hash`: RFC 9380's `expand_message_xmd` over SHA-256, and the group's
+  `HashToGroup`, `HashToScalar`, `DeriveScalars`, `ExpandScalars`,
+  `DeriveNonces`, and `DeriveKeyPair`, each under a protocol context the
+  caller supplies.
+* `random`: the drafts' single source of randomness, `random(n)`, which the
+  protocol crates' test vectors replay.
+
+## Backends
+
+| Feature                | Curve, SHA-256, hash-to-curve, randomness | Fixed-base tables |
+|------------------------|-------------------------------------------|-------------------|
+| `rustcrypto` (default) | `p256`, `sha2`, `getrandom`               | 4-bit windows, 72 KiB per base |
+| `boringssl`            | BoringSSL through `bssl-sys`              | none (BoringSSL exports tables for the generator only) |
+
+Both backends encode scalars as 32-byte big-endian integers and points as
+compressed SEC1, reject the identity, and produce identical outputs; with
+both features enabled, the tests check that they agree. Scalar
+multiplication is constant time in the scalar, and so is point addition,
+except that BoringSSL's `EC_POINT_add` branches when its operands are equal
+or negatives of each other. The [`ec-ihat` README](../ec-ihat/README.md)
+describes how to build BoringSSL for the `boringssl` feature.
+
+The crate is `no_std` with `alloc`. The `std` feature enables the standard
+library in `p256` and `getrandom`, and the precomputed generator tables of
+`p256`.
+
+## License
+
+Apache License 2.0; see [LICENSE](LICENSE).
+
+## Disclaimer
+
+This is not an officially supported Google product. This project is not
+eligible for the [Google Open Source Software Vulnerability Rewards
+Program](https://bughunters.google.com/open-source-security).

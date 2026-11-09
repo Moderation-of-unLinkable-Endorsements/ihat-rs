@@ -302,9 +302,8 @@ name = "ec-act"
 version = "0.1.0"
 dependencies = [
  "criterion",
- "ec-ihat",
  "hex",
- "p256",
+ "mole-p256",
  "shake",
  "subtle",
  "zeroize",
@@ -314,12 +313,9 @@ dependencies = [
 name = "ec-ihat"
 version = "0.1.0"
 dependencies = [
- "bssl-sys",
  "criterion",
- "getrandom",
  "hex",
- "p256",
- "sha2",
+ "mole-p256",
  "subtle",
  "zeroize",
 ]
@@ -512,6 +508,19 @@ name = "memchr"
 version = "2.8.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cf8baf1c55e62ffcace7a9f06f4bd9cd3f0c4beb022d3b367256b91b87513d98"
+
+[[package]]
+name = "mole-p256"
+version = "0.1.0"
+dependencies = [
+ "bssl-sys",
+ "getrandom",
+ "hex",
+ "p256",
+ "sha2",
+ "subtle",
+ "zeroize",
+]
 
 [[package]]
 name = "num-traits"

@@ -18,35 +18,14 @@
 //! `DeriveKeyPair`.
 //!
 //! Shared by IHAT and ACT. Each domain separation tag is a label followed by
-//! the protocol context `ctx` supplied by the caller. This module is to move
-//! into a `mole-p256` crate shared with act-rs; see the TODO in `lib.rs`.
+//! the protocol context `ctx` supplied by the caller.
 
 use alloc::vec::Vec;
 
-use subtle::CtOption;
 use zeroize::{Zeroize, Zeroizing};
 
+use crate::Error;
 use crate::backend::{Backend, SCALAR_LENGTH, Scalar, Sha256};
-
-/// A hashing or scalar derivation failure.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Error {
-    /// An input has an invalid length or count.
-    InvalidInput,
-    /// Derivation failed to produce a usable scalar or group element.
-    Derive,
-}
-
-impl core::fmt::Display for Error {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        f.write_str(match self {
-            Self::InvalidInput => "input has an invalid length or count",
-            Self::Derive => "derivation failed to produce a usable scalar or group element",
-        })
-    }
-}
-
-impl core::error::Error for Error {}
 
 /// The seed length `Nseed`.
 pub(crate) const NSEED: usize = crate::SEED_LENGTH;
@@ -301,8 +280,3 @@ pub trait BackendHashExt: Backend {
 }
 
 impl<B: Backend> BackendHashExt for B {}
-
-/// Checks that a `CtOption` holds a value, mapping absence to `error`.
-pub(crate) fn require<T, E>(value: CtOption<T>, error: E) -> Result<T, E> {
-    value.into_option().ok_or(error)
-}

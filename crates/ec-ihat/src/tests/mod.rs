@@ -19,7 +19,7 @@
 
 use alloc::vec::Vec;
 
-use crate::random::Random;
+use mole_p256::random::{Random, SystemRandom};
 
 /// Instantiates generic test functions for each enabled backend.
 macro_rules! backend_tests {
@@ -35,7 +35,7 @@ macro_rules! backend_tests {
     };
 }
 
-mod primitives;
+mod components;
 mod protocol;
 mod vectors;
 
@@ -60,7 +60,7 @@ impl Replay {
 }
 
 impl Random for Replay {
-    fn fill(&mut self, buf: &mut [u8]) -> Result<(), crate::Error> {
+    fn fill(&mut self, buf: &mut [u8]) -> Result<(), mole_p256::Error> {
         let end = self.offset + buf.len();
         assert!(
             end <= self.data.len(),
@@ -76,8 +76,8 @@ impl Random for Replay {
 
 /// The operating system's random number generator, for tests that do not
 /// pin their randomness.
-pub(crate) fn os_rng<B: crate::Backend>() -> crate::random::SystemRandom<B> {
-    crate::random::SystemRandom::new()
+pub(crate) fn os_rng<B: crate::Backend>() -> SystemRandom<B> {
+    SystemRandom::new()
 }
 
 /// A key derived from a seed drawn from `rng`.
