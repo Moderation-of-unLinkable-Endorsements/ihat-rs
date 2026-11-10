@@ -148,7 +148,10 @@ pub trait Point: Clone + Debug + PartialEq + Eq + Sized {
     /// `sum_i scalar_i * point_i`.
     ///
     /// The default computes each product separately; a backend may use a
-    /// multi-scalar multiplication. Must be constant time in the scalars.
+    /// multi-scalar multiplication. Timing inherits the backend's `mul` and
+    /// `add` guarantees. In particular, the default is not unconditionally
+    /// constant time in the scalars on backends with exceptional-addition
+    /// branches; callers must account for those cases when scalars are secret.
     fn lincomb<const N: usize>(terms: [(&Self, &Self::Scalar); N]) -> Self {
         terms.iter().fold(Self::identity(), |acc, (point, scalar)| {
             acc.add(&point.mul(scalar))
@@ -158,10 +161,12 @@ pub trait Point: Clone + Debug + PartialEq + Eq + Sized {
     /// The point at `index` in `table`, or `None` if `index` is out of
     /// range or any entry is the identity.
     ///
-    /// Constant time in `index`: every entry is read, and the result is
-    /// chosen by constant-time selection. Which entries are the identity may
-    /// affect timing, and a backend may take a separate path when the
-    /// selection fails, as the BoringSSL backend does.
+    /// Every entry is visited. For a fixed public table of nonidentity
+    /// points and an in-range secret index, selection does not index memory
+    /// using the secret. The backend must also keep conversion of the
+    /// selected point constant time. Table validity and whether the index is
+    /// in range may affect timing, and a backend may take a separate path
+    /// when the selection fails, as the BoringSSL backend does.
     fn ct_select<'a, I>(table: I, index: usize) -> CtOption<Self>
     where
         I: IntoIterator<Item = &'a Self>,
@@ -216,9 +221,10 @@ pub trait Backend: 'static + Copy + Debug + Default + PartialEq + Eq + Send + Sy
 
     /// `P256_XMD:SHA-256_SSWU_RO_` of RFC 9380 over the concatenation of
     /// `msg` with the concatenation of `dst` as the domain separation tag.
+    /// A tag longer than 255 bytes is shortened as RFC 9380, Section 5.3.3
+    /// specifies.
     ///
-    /// Returns `None` only for a tag whose length the backend rejects; the
-    /// tags of this crate are short constants.
+    /// Returns `None` only if the backend fails.
     fn hash_to_curve(msg: &[&[u8]], dst: &[&[u8]]) -> Option<Self::Point>;
 
     /// Fills `buf` from the operating system's cryptographic random number

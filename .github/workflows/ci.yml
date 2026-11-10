@@ -37,6 +37,8 @@ jobs:
       - run: cargo fmt --all --check
       - run: cargo clippy --workspace --all-targets -- -D warnings
       - run: cargo test --workspace
+      # mole-p256's derivation vectors still match their independent oracle.
+      - run: python3 crates/mole-p256/tests/vectors/generate.py --check
       - run: cargo doc --workspace --no-deps
       - run: cargo run -p ec-ihat --example ihat_demo
       - run: cargo run -p ec-act --example act_demo

@@ -18,7 +18,8 @@
 //! `DeriveKeyPair`.
 //!
 //! Shared by IHAT and ACT. Each domain separation tag is a label followed by
-//! the protocol context `ctx` supplied by the caller.
+//! the protocol context `ctx` supplied by the caller, so separate protocols
+//! must pass different contexts to keep their hashes apart.
 
 use alloc::vec::Vec;
 
@@ -42,6 +43,8 @@ const NH: usize = 32;
 /// `expand_message_xmd` with SHA-256 (RFC 9380, Section 5.3.1), with the
 /// message split into a prefix absorbed once and a suffix supplied per call.
 /// The domain separation tag is the concatenation of `dst`.
+///
+/// The longest output `expand_message_xmd` defines is `255 * 32` bytes.
 pub struct XmdPrefix<H: Sha256> {
     hasher: H,
 }
@@ -66,11 +69,51 @@ impl<H: Sha256> XmdPrefix<H> {
 
     /// `expand_message_xmd(prefix || suffix, dst, len(out))`.
     ///
-    /// `dst` is at most 255 bytes and `out` at most `255 * 32` bytes; the
-    /// tags of this crate are short and every output is 32 or 48 bytes.
+    /// A tag longer than 255 bytes is replaced by
+    /// `H("H2C-OVERSIZE-DST-" || dst)`, as RFC 9380, Section 5.3.3 specifies.
+    ///
+    /// # Panics
+    ///
+    /// If `out` is longer than `255 * 32` bytes. [`Self::try_expand_into`]
+    /// returns an error instead.
     pub fn expand_into(&self, suffix: &[&[u8]], dst: &[&[u8]], out: &mut [u8]) {
-        let dst_len = dst.iter().map(|part| part.len()).sum::<usize>();
-        debug_assert!(dst_len <= 255 && out.len() <= 255 * 32);
+        assert!(
+            self.try_expand_into(suffix, dst, out).is_ok(),
+            "XMD length exceeds RFC 9380 limit"
+        );
+    }
+
+    /// [`Self::expand_into`], returning [`Error::InvalidInput`] and leaving
+    /// `out` unchanged if `out` is longer than `255 * 32` bytes.
+    pub fn try_expand_into(
+        &self,
+        suffix: &[&[u8]],
+        dst: &[&[u8]],
+        out: &mut [u8],
+    ) -> Result<(), Error> {
+        if out.len() > 255 * 32 {
+            return Err(Error::InvalidInput);
+        }
+        // Saturating, so that many views of one long slice cannot wrap.
+        let dst_len = dst
+            .iter()
+            .fold(0usize, |len, part| len.saturating_add(part.len()));
+        let oversize = dst_len > 255;
+        let mut short_dst = [0u8; 32];
+        if oversize {
+            let mut hasher = H::new();
+            hasher.update(b"H2C-OVERSIZE-DST-");
+            for part in dst {
+                hasher.update(part);
+            }
+            short_dst = hasher.finalize();
+        }
+        let short_parts: [&[u8]; 1] = [&short_dst];
+        let (dst, dst_len) = if oversize {
+            (&short_parts[..], short_dst.len())
+        } else {
+            (dst, dst_len)
+        };
         let dst_prime_tail = [dst_len as u8];
         let absorb_dst = |hasher: &mut H| {
             for part in dst {
@@ -105,6 +148,7 @@ impl<H: Sha256> XmdPrefix<H> {
         }
         b0.zeroize();
         previous.zeroize();
+        Ok(())
     }
 }
 
@@ -199,7 +243,10 @@ pub trait BackendHashExt: Backend {
         }
         let label_len = u16::try_from(label.len()).map_err(|_| Error::InvalidInput)?;
         let secret_len = u32::try_from(secret.len()).map_err(|_| Error::InvalidInput)?;
-        let instance_len = instance.iter().map(|part| part.len()).sum::<usize>();
+        // Checked, so that many views of one long slice cannot wrap.
+        let instance_len = instance.iter().try_fold(0usize, |len, part| {
+            len.checked_add(part.len()).ok_or(Error::InvalidInput)
+        })?;
         let instance_len = u32::try_from(instance_len).map_err(|_| Error::InvalidInput)?;
         let (label_len, secret_len, instance_len) = (
             label_len.to_be_bytes(),
