@@ -110,7 +110,9 @@ jobs:
         uses: actions/cache@v6
         with:
           path: boringssl
-          key: boringssl-${{ steps.image.outputs.os }}-${{ hashFiles('scripts/build-boringssl.sh') }}
+          # The Cargo config the build writes holds the checkout's absolute
+          # path, which the repository's name determines.
+          key: boringssl-${{ steps.image.outputs.os }}-${{ github.event.repository.name }}-${{ hashFiles('scripts/build-boringssl.sh') }}
       - if: steps.boringssl-cache.outputs.cache-hit != 'true'
         run: scripts/build-boringssl.sh
       - run: cargo test --workspace --no-default-features --features boringssl --config boringssl/cargo-config.toml
