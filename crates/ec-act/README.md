@@ -233,10 +233,10 @@ boundary (`tests/vectors/generate.py` records how). Every `rand` entry is
 replayed in place of the random number generator, so every key, message,
 state, and Credential must match byte for byte. Further tests cover
 tampering, misdirected messages, amount and shape bounds, the identity checks
-of every statement, and RFC 9380 known answers for the primitives.
+of every statement, and known answers for SHAKE128 and ACT's tags.
 
-`mole-p256` has further tests of the group, hashing, and derivation layer,
-including its fixed-base tables. The [workspace README](../../README.md)
+`mole-p256` tests the group, hashing, and derivation layer beneath them,
+including RFC 9380's known answers and the fixed-base tables. The [workspace README](../../README.md)
 describes continuous integration.
 
 ## License
