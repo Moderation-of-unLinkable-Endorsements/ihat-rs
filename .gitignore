@@ -1,3 +1,4 @@
 /target
 /boringssl
 /mutants.out*
+__pycache__/

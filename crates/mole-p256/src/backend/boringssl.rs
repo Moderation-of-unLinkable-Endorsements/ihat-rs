@@ -19,9 +19,11 @@
 //! `BN_mod_sub_quick`, Montgomery multiplication, and
 //! `BN_mod_exp_mont_consttime` for inversion. Points are heap `EC_POINT`
 //! handles in projective form, so that values derived from secrets are
-//! never re-parsed from a compressed encoding; P-256 point arithmetic in
-//! BoringSSL is constant time. The x-coordinate test of the permutation
-//! uses the same constant-time bignum routines modulo the field prime.
+//! never re-parsed from a compressed encoding. BoringSSL point addition has
+//! exceptional paths for equal or opposite operands; callers must account
+//! for them when operands depend on secrets. The x-coordinate test of the
+//! permutation uses the same constant-time bignum routines modulo the field
+//! prime.
 //! Hash-to-curve, SHA-256, and randomness are BoringSSL's as well.
 //!
 //! Every FFI call carries a `SAFETY` comment. Allocation failure is treated

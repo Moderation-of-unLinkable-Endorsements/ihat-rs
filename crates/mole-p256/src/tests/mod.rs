@@ -31,4 +31,5 @@ macro_rules! backend_tests {
     };
 }
 
+mod oracle;
 mod primitives;
