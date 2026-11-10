@@ -12,86 +12,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Known answers for the primitives beneath the protocol.
+//! Known answers for ACT's own primitives: its SHAKE128 sponge, tags,
+//! coefficients, and reduction. `mole-p256` tests the group and hashing
+//! beneath them.
 
-use alloc::vec::Vec;
-
-use mole_p256::Error as HashError;
 use mole_p256::hash::BackendHashExt;
 use shake::{ExtendableOutput, Shake128, Update, XofReader};
 
 use crate::PROTOCOL_CONTEXT;
-use crate::backend::{Backend, Point, SCALAR_LENGTH, Scalar};
-use crate::hash::{self, XmdPrefix};
+use crate::backend::{Backend, SCALAR_LENGTH, Scalar};
+use crate::hash;
 use crate::sigma::{self, MINUS_ONE, ONE, coefficient, order_minus};
-
-/// RFC 9380, Appendix K.1: `expand_message_xmd(SHA-256)`.
-fn expand_message_xmd_vectors<B: Backend>() {
-    const DST: &[u8] = b"QUUX-V01-CS02-with-expander-SHA256-128";
-    let cases: [(&[u8], usize, &str); 3] = [
-        (
-            b"",
-            0x20,
-            "68a985b87eb6b46952128911f2a4412bbc302a9d759667f87f7a21d803f07235",
-        ),
-        (
-            b"abc",
-            0x20,
-            "d8ccab23b5985ccea865c6c97b6e5b8350e794e603b4b97902f53a8a0d605615",
-        ),
-        (
-            b"",
-            0x80,
-            "af84c27ccfd45d41914fdff5df25293e221afc53d8ad2ac06d5e3e29485dadbee0d121587713a3e0dd4d5e69e93eb7cd4f5df4cd103e188cf60cb02edc3edf18eda8576c412b18ffb658e3dd6ec849469b979d444cf7b26911a08e63cf31f9dcc541708d3491184472c2c29bb749d4286b004ceb5ee6b9a7fa5b646c993f0ced",
-        ),
-    ];
-    for (msg, len, expected) in cases {
-        let mut out = alloc::vec![0u8; len];
-        XmdPrefix::<B::Sha256>::new(&[]).expand_into(&[msg], &[DST], &mut out);
-        assert_eq!(hex::encode(&out), expected);
-        // The prefix split does not change the output.
-        if !msg.is_empty() {
-            XmdPrefix::<B::Sha256>::new(&[&msg[..1]]).expand_into(&[&msg[1..]], &[DST], &mut out);
-            assert_eq!(hex::encode(&out), expected);
-        }
-    }
-}
-
-/// RFC 9380, Appendix J.1.1: `P256_XMD:SHA-256_SSWU_RO_`.
-fn hash_to_curve_vectors<B: Backend>() {
-    const DST: &[u8] = b"QUUX-V01-CS02-with-P256_XMD:SHA-256_SSWU_RO_";
-    let cases: [(&[u8], &str, &str); 3] = [
-        (
-            b"",
-            "2c15230b26dbc6fc9a37051158c95b79656e17a1a920b11394ca91c44247d3e4",
-            "8a7a74985cc5c776cdfe4b1f19884970453912e9d31528c060be9ab5c43e8415",
-        ),
-        (
-            b"abc",
-            "0bb8b87485551aa43ed54f009230450b492fead5f1cc91658775dac4a3388a0f",
-            "5c41b3d0731a27a7b14bc0bf0ccded2d8751f83493404c84a88e71ffd424212e",
-        ),
-        (
-            b"abcdef0123456789",
-            "65038ac8f2b1def042a5df0b33b1f4eca6bff7cb0f9c6c1526811864e544ed80",
-            "cad44d40a656e7aff4002a8de287abc8ae0482b5ae825822bb870d6df9b56ca3",
-        ),
-    ];
-    for (msg, x, y) in cases {
-        let point = B::hash_to_curve(&[msg], &[DST]).unwrap();
-        let y = hex::decode(y).unwrap();
-        let mut expected = alloc::vec![2 | (y[31] & 1)];
-        expected.extend(hex::decode(x).unwrap());
-        assert_eq!(point.to_bytes().unwrap().to_vec(), expected);
-        // Message and tag parts concatenate.
-        let split = B::hash_to_curve(
-            &[&msg[..msg.len() / 2], &msg[msg.len() / 2..]],
-            &[&DST[..10], &DST[10..]],
-        )
-        .unwrap();
-        assert_eq!(split, point);
-    }
-}
 
 /// SHAKE128 known answers, through the protocol's sponge.
 #[test]
@@ -170,151 +101,14 @@ fn coefficients<B: Backend>() {
     }
 }
 
-fn scalar_arithmetic<B: Backend>() {
-    let a = B::Scalar::from(7);
-    let b = B::Scalar::from(6);
-    let bytes = |s: B::Scalar| s.to_bytes();
-    assert_eq!(bytes(a * b), bytes(B::Scalar::from(42)));
-    assert_eq!(bytes(a + b), bytes(B::Scalar::from(13)));
-    assert_eq!(bytes(a - b), bytes(B::Scalar::from(1)));
-    assert_eq!(bytes(b - a), MINUS_ONE);
-    assert_eq!(bytes(a + -a), bytes(B::Scalar::default()));
-    assert_eq!(bytes(a * a.invert().unwrap()), ONE);
-    assert!(bool::from(B::Scalar::default().invert().is_none()));
-    assert!(bool::from(B::Scalar::default().is_zero()));
-    assert!(!bool::from(a.is_zero()));
-    // Canonical decoding admits order - 1 and rejects the order.
-    assert!(bool::from(B::Scalar::from_bytes(&MINUS_ONE).is_some()));
-    assert!(bool::from(
-        B::Scalar::from_bytes(&crate::backend::ORDER).is_none()
-    ));
-    let mut above = crate::backend::ORDER;
-    above[SCALAR_LENGTH - 1] += 1;
-    assert!(bool::from(B::Scalar::from_bytes(&above).is_none()));
-    assert!(bool::from(
-        B::Scalar::from_bytes(&[0xff; SCALAR_LENGTH]).is_none()
-    ));
-    // (order - 1) + 1 wraps to zero, and (order - 1)^2 = 1.
-    let max = B::Scalar::from_bytes(&MINUS_ONE).unwrap();
-    assert!(bool::from((max + B::Scalar::from(1)).is_zero()));
-    assert_eq!(bytes(max * max), ONE);
-}
-
-fn point_arithmetic<B: Backend>() {
-    let g = B::Point::generator();
-    let two = B::Scalar::from(2);
-    let three = B::Scalar::from(3);
-    assert_eq!(g.double(), g.add(&g));
-    assert_eq!(g.mul(&two), g.double());
-    assert_eq!(g.mul(&three), g.double().add(&g));
-    assert_eq!(B::Point::mul_generator(&three), g.mul(&three));
-    assert!(bool::from(
-        g.mul(&-B::Scalar::from(1)).add(&g).is_identity()
-    ));
-    assert_eq!(
-        B::Point::lincomb([(&g, &two), (&g.double(), &three)]),
-        g.mul(&B::Scalar::from(8))
-    );
-    assert_eq!(
-        B::Point::lincomb([(&g, &two), (&g, &-two)]),
-        B::Point::identity()
-    );
-    assert_eq!(B::Point::identity().to_bytes(), None);
-    assert_eq!(
-        hex::encode(g.to_bytes().unwrap()),
-        "036b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c296"
-    );
-    let decoded = B::Point::from_bytes(&g.to_bytes().unwrap()).unwrap();
-    assert_eq!(decoded, g);
-    assert!(bool::from(B::Point::from_bytes(&[0; 33]).is_none()));
-    // Only the compressed prefixes decode: not 0x04 (uncompressed), 0x05
-    // (the SEC1 compact tag), or any other.
-    for prefix in (0..=u8::MAX).filter(|prefix| *prefix != 2 && *prefix != 3) {
-        let mut other = g.to_bytes().unwrap();
-        other[0] = prefix;
-        assert!(
-            bool::from(B::Point::from_bytes(&other).is_none()),
-            "prefix {prefix:#04x}"
-        );
-    }
-    let mut off_curve = g.to_bytes().unwrap();
-    off_curve[32] ^= 1;
-    // x + 1 may or may not be on the curve; only check that decoding is consistent.
-    if let Some(point) = B::Point::from_bytes(&off_curve).into_option() {
-        assert_eq!(point.to_bytes().unwrap(), off_curve);
-    }
-    let mut zeroized = g.clone();
-    zeroized.zeroize();
-    assert!(bool::from(zeroized.is_identity()));
-}
-
-fn derivations<B: Backend>() {
+/// ACT's tags end in its protocol context, and its little-endian
+/// `DecodeUint` reduction agrees with the scalar arithmetic and with the
+/// big-endian reduction of the reversed bytes.
+fn tags_and_reductions<B: Backend>() {
     for dst in [hash::DST_HASH_TO_GROUP, hash::DST_HASH_TO_SCALAR] {
-        assert!(dst.ends_with(crate::PROTOCOL_CONTEXT));
+        assert!(dst.ends_with(PROTOCOL_CONTEXT));
     }
-    let rand = [1u8; 48];
-    let a = B::derive_scalars(PROTOCOL_CONTEXT, &rand, b"a", 3).unwrap();
-    let b = B::derive_scalars(PROTOCOL_CONTEXT, &rand, b"b", 3).unwrap();
-    assert_eq!(a.len(), 3);
-    for (x, y) in a.iter().zip(b.iter()) {
-        assert_ne!(x.to_bytes(), y.to_bytes());
-        assert!(!bool::from(x.is_zero()));
-    }
-    // A change to any part of the input changes every derived scalar.
-    let mut changed = rand;
-    changed[47] ^= 1;
-    let c = B::derive_scalars(PROTOCOL_CONTEXT, &changed, b"a", 3).unwrap();
-    for (x, y) in a.iter().zip(c.iter()) {
-        assert_ne!(x.to_bytes(), y.to_bytes());
-    }
-    let long = [1u8; 49];
-    for wrong in [&long[..0], &long[..47], &long[..49]] {
-        assert_eq!(
-            B::derive_scalars(PROTOCOL_CONTEXT, wrong, b"a", 1).unwrap_err(),
-            HashError::InvalidInput
-        );
-        assert_eq!(
-            B::derive_nonces(PROTOCOL_CONTEXT, b"secret", b"e", &[b"x"], wrong, 1).unwrap_err(),
-            HashError::InvalidInput
-        );
-    }
-    assert_eq!(
-        B::derive_scalars(PROTOCOL_CONTEXT, &rand, &[0u8; 65536], 1).unwrap_err(),
-        HashError::InvalidInput
-    );
-    let seed = [1u8; 48];
-    let nonce = B::derive_nonces(
-        PROTOCOL_CONTEXT,
-        b"secret",
-        b"e",
-        &[b"inst", b"ance"],
-        &seed,
-        2,
-    )
-    .unwrap();
-    let joined =
-        B::derive_nonces(PROTOCOL_CONTEXT, b"secret", b"e", &[b"instance"], &seed, 2).unwrap();
-    assert_eq!(nonce[1].to_bytes(), joined[1].to_bytes());
-    let other = B::derive_nonces(
-        PROTOCOL_CONTEXT,
-        b"secret",
-        b"e",
-        &[b"instance"],
-        &[2u8; 48],
-        2,
-    )
-    .unwrap();
-    for (x, y) in nonce.iter().zip(other.iter()) {
-        assert_ne!(x.to_bytes(), y.to_bytes());
-    }
-    let key = B::derive_key_scalar(PROTOCOL_CONTEXT, &seed, b"GenerateKeyPair").unwrap();
-    assert!(!bool::from(key.is_zero()));
-    assert_ne!(key.to_bytes(), a[0].to_bytes());
-    // Little- and big-endian reductions agree with the scalar arithmetic.
     let mut bytes = [0u8; 48];
-    bytes[47] = 5;
-    assert_eq!(B::reduce_be_48(&bytes).to_bytes(), coefficient(5));
-    bytes[47] = 0;
     bytes[0] = 5;
     assert_eq!(hash::reduce_le_48::<B>(&bytes).to_bytes(), coefficient(5));
     let all = [0xffu8; 48];
@@ -328,45 +122,36 @@ fn derivations<B: Backend>() {
         let two_192 = B::Scalar::from_bytes(&two_192).unwrap();
         half * two_192 + half
     };
-    assert_eq!(B::reduce_be_48(&all).to_bytes(), expected.to_bytes());
     assert_eq!(
         hash::reduce_le_48::<B>(&all).to_bytes(),
         expected.to_bytes()
     );
-    let _: Vec<u8> = Vec::new();
+    let ascending: [u8; 48] = core::array::from_fn(|i| i as u8);
+    let mut descending = ascending;
+    descending.reverse();
+    assert_eq!(
+        hash::reduce_le_48::<B>(&ascending).to_bytes(),
+        B::reduce_be_48(&descending).to_bytes()
+    );
 }
 
-backend_tests!(
-    expand_message_xmd_vectors,
-    hash_to_curve_vectors,
-    coefficients,
-    scalar_arithmetic,
-    point_arithmetic,
-    derivations,
-);
+backend_tests!(coefficients, tags_and_reductions);
 
 /// With both backends enabled, every public output must agree.
 #[cfg(all(feature = "rustcrypto", feature = "boringssl"))]
 mod parity {
+    use crate::backend::Point;
     use crate::backend::boringssl::BoringSsl;
     use crate::backend::rustcrypto::RustCrypto;
-    use crate::backend::{Point, Scalar};
-    use mole_p256::hash::BackendHashExt;
 
     #[test]
-    fn generators_and_hashes_agree() {
+    fn generators_agree() {
         let rc = crate::Params::<RustCrypto>::new(8).unwrap();
         let bssl = crate::Params::<BoringSsl>::new(8).unwrap();
         let a = super::super::protocol::generators(&rc);
         let b = super::super::protocol::generators(&bssl);
         for (a, b) in a.iter().zip(&b) {
             assert_eq!(a.to_bytes(), b.to_bytes());
-        }
-        for msg in [&b""[..], b"ctx", &[7u8; 300]] {
-            assert_eq!(
-                RustCrypto::hash_to_scalar_with_dst(&[msg], &[b"dst"]).to_bytes(),
-                BoringSsl::hash_to_scalar_with_dst(&[msg], &[b"dst"]).to_bytes()
-            );
         }
     }
 

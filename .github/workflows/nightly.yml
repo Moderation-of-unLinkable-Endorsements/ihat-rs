@@ -54,9 +54,8 @@ jobs:
       # Tests that need SHAKE128 are left out for the same reason.
       - run: >
           cargo miri test -p ec-act --lib --
-          rustcrypto::point_arithmetic rustcrypto::scalar_arithmetic
           rustcrypto::coefficients rustcrypto::keys_round_trip
-          rustcrypto::derivations
+          rustcrypto::tags_and_reductions
         env:
           RUSTFLAGS: --cfg sha2_backend="soft"
           MIRIFLAGS: -Zmiri-disable-isolation

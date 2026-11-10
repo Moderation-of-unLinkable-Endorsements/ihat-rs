@@ -15,8 +15,6 @@
 //! ACT-specific hashing tags and scalar decoding.
 
 use mole_p256::hash::BackendHashExt;
-#[cfg(test)]
-pub(crate) use mole_p256::hash::XmdPrefix;
 use subtle::CtOption;
 use zeroize::Zeroize;
 
