@@ -168,15 +168,12 @@ cargo test --features rustcrypto,boringssl   # both, plus interoperability
 cargo bench                                  # criterion, per backend
 ```
 
-`tests/vectors/draft.txt` is the draft's Test Vectors section with the
-fences and headings removed. `tests/vectors/extended.txt` was generated from
-the draft's Python reference implementation by `tests/vectors/generate.py`,
-with redemptions against Anchor Sets of 2, 3, 4, 6, 7, 8, 9, 16, 33, and 1
-keys at the first, last, and interior positions, and `P` and `Pinv` of
-further points. Every `rand` entry is replayed in place of the random number
-generator, so every key, message, state, Endorsement, and redemption must
-match byte for byte. Further tests cover issuance and redemption at every
-position of Anchor Sets of 1 to 9 keys, tampering with every field of a
+`tests/vectors/draft-ladd-mole-ec-ihat-00.txt` is the Test Vectors section of
+the versioned Datatracker draft. Every `rand` entry is replayed in place of
+the random number generator, so every key, message, state, Endorsement, and
+redemption must match byte for byte. Further tests cover issuance and
+redemption at every position of Anchor Sets of 1 to 9 keys and representative
+positions in sets of 16 and 33 keys, tampering with every field of a
 redemption, other contexts, digests, and Anchor Sets, the identity checks of
 `Verify` and `VerifyIssuer`, and the permutation and commitment tree;
 `mole-p256` tests the x-coordinate test against point decoding, the RFC 9380

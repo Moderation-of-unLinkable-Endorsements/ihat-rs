@@ -80,6 +80,22 @@ fn issue_and_redeem_everywhere<B: Backend>() {
     }
 }
 
+fn larger_anchor_sets<B: Backend>() {
+    for (n, index) in [(16, 9), (33, 32)] {
+        let (secret, public) = keys::<B>(n);
+        let endorsement = issue(&secret[index], CTX_ISS, CTX_RED);
+        let nf = *endorsement.nullifier();
+        let redemption = redemption(&public, index, endorsement);
+        let encoded = redemption.to_bytes();
+        assert_eq!(encoded.len(), Redemption::<B>::encoded_len(n));
+        let decoded = Redemption::<B>::from_bytes(&encoded, n).unwrap();
+        assert_eq!(
+            verify_redemption(&public, &decoded, CTX_ISS, CTX_RED, DIGEST).unwrap(),
+            nf
+        );
+    }
+}
+
 fn redemption_rejections<B: Backend>() {
     let (secret, public) = keys::<B>(5);
     let endorsement = issue(&secret[3], CTX_ISS, CTX_RED);
@@ -613,6 +629,7 @@ fn entropy_failure_is_an_error<B: Backend>() {
 backend_tests!(
     entropy_failure_is_an_error,
     issue_and_redeem_everywhere,
+    larger_anchor_sets,
     redemption_rejections,
     redemption_is_deterministic,
     issuance_rejections,
