@@ -30,10 +30,12 @@ extern crate alloc;
 #[cfg(not(any(feature = "rustcrypto", feature = "boringssl")))]
 compile_error!("enable at least one backend feature: `rustcrypto` or `boringssl`");
 
+mod encoding;
 mod hash;
 mod protocol;
 mod sigma;
 mod statements;
+mod storage;
 mod wire;
 
 #[cfg(test)]
