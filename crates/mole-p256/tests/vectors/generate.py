@@ -16,7 +16,7 @@ ORDER = int("ffffffff00000000ffffffffffffffffbce6faada7179e84f3b9cac2fc632551", 
 SEED = bytes(range(48))
 SECRET = bytes(range(32))
 # The last context makes every tag longer than 255 bytes (RFC 9380, 5.3.3).
-CONTEXTS = (b"ACTv1-P256-SHA256", b"EC-ACTv1-P256-SHA256", b"EC-IHATv1-P256-SHA256", b"x" * 300)
+CONTEXTS = (b"EC-ACTv1-P256-SHA256", b"EC-IHATv1-P256-SHA256", b"x" * 300)
 # Tag lengths around the 255-byte limit, for expand_message_xmd itself.
 TAG_LENGTHS = (255, 256, 512)
 

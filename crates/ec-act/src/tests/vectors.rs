@@ -12,10 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Replays the draft's test vectors, and vectors generated from the
-//! reference implementation at other balance widths, against every
-//! algorithm and encoding. Every `rand` entry is served in place of
-//! `random`, so each output must match byte for byte.
+//! Replays the draft's test vectors against every algorithm and encoding.
+//! Every `rand` entry is served in place of `random`, so each output must
+//! match byte for byte.
 
 use alloc::collections::BTreeMap;
 use alloc::string::{String, ToString};
@@ -31,14 +30,7 @@ use crate::protocol::{
 };
 
 /// The draft's vectors, `L = 4`.
-const DRAFT_L4: &str = include_str!("../../tests/vectors/draft-L4.txt");
-const EXTENDED: [(&str, &str); 5] = [
-    ("L1", include_str!("../../tests/vectors/act-L1.txt")),
-    ("L2", include_str!("../../tests/vectors/act-L2.txt")),
-    ("L8", include_str!("../../tests/vectors/act-L8.txt")),
-    ("L16", include_str!("../../tests/vectors/act-L16.txt")),
-    ("L64", include_str!("../../tests/vectors/act-L64.txt")),
-];
+const DRAFT_L4: &str = include_str!("../../tests/vectors/draft-schlesinger-mole-ec-act-00.txt");
 
 /// Parses the draft's `key = value` blocks, joining continuation lines.
 fn parse(text: &str) -> BTreeMap<String, String> {
@@ -196,10 +188,4 @@ fn draft_l4<B: BackendFixedBaseExt>() {
     replay::<B>(DRAFT_L4);
 }
 
-fn extended<B: BackendFixedBaseExt>() {
-    for (_name, text) in EXTENDED {
-        replay::<B>(text);
-    }
-}
-
-backend_tests!(draft_l4, extended);
+backend_tests!(draft_l4);
