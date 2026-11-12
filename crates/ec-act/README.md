@@ -226,14 +226,12 @@ cargo test --features rustcrypto,boringssl   # both, plus interoperability
 cargo bench                                  # criterion, per backend and L
 ```
 
-`tests/vectors/draft-L4.txt` is the draft's test-vector appendix; the other
-files there were generated from the draft's Python reference implementation
-at `L` = 1, 2, 8, 16, and 64, covering every spend shape and the `uint64`
-boundary (`tests/vectors/generate.py` records how). Every `rand` entry is
-replayed in place of the random number generator, so every key, message,
-state, and Credential must match byte for byte. Further tests cover
-tampering, misdirected messages, amount and shape bounds, the identity checks
-of every statement, and known answers for SHAKE128 and ACT's tags.
+`tests/vectors/draft-L4.txt` is the test-vector appendix of the versioned
+Datatracker draft. Every `rand` entry is replayed in place of the random
+number generator, so every key, message, state, and Credential must match byte
+for byte. Further tests cover tampering, misdirected messages, balance widths
+through the `uint64` boundary, amount and shape bounds, the identity checks of
+every statement, and known answers for SHAKE128 and ACT's tags.
 
 `mole-p256` tests the group, hashing, and derivation layer beneath them,
 including RFC 9380's known answers and the fixed-base tables. The [workspace README](../../README.md)
