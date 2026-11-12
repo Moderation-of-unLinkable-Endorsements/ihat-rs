@@ -42,7 +42,6 @@ use crate::SEED_LENGTH;
 pub mod rustcrypto;
 
 #[cfg(feature = "boringssl")]
-#[allow(unsafe_code)]
 pub mod boringssl;
 
 /// Length of a serialized scalar, `Ns`.
