@@ -28,7 +28,7 @@ changes with them.
 
 Both backends encode scalars as 32-byte big-endian integers and points as
 compressed SEC1, reject the identity, and produce identical outputs; with
-both features enabled, the tests check that they agree. Scalar
+the explicit `backend-parity` feature, the tests check that they agree. Scalar
 multiplication is constant time in the scalar, and so is point addition,
 except that BoringSSL's `EC_POINT_add` branches when its operands are equal
 or negatives of each other. The [`ec-ihat` README](../ec-ihat/README.md)

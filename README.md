@@ -19,7 +19,8 @@ Each crate's README describes its API, backends, design, and tests.
 cargo test --workspace                       # RustCrypto backend
 scripts/build-boringssl.sh                   # see the crate READMEs
 export BORINGSSL_BUILD_DIR=$PWD/boringssl/build
-cargo test --workspace --features rustcrypto,boringssl --config boringssl/cargo-config.toml
+cargo test --workspace --no-default-features --features boringssl --config boringssl/cargo-config.toml
+cargo test --workspace --features backend-parity --config boringssl/cargo-config.toml
 ```
 
 Continuous integration (`.github/workflows/ci.yml`) runs on every change,

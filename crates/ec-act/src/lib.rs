@@ -30,6 +30,15 @@ extern crate alloc;
 #[cfg(not(any(feature = "rustcrypto", feature = "boringssl")))]
 compile_error!("enable at least one backend feature: `rustcrypto` or `boringssl`");
 
+#[cfg(all(
+    feature = "rustcrypto",
+    feature = "boringssl",
+    not(feature = "backend-parity")
+))]
+compile_error!(
+    "`rustcrypto` and `boringssl` are mutually exclusive; disable default features for a BoringSSL-only build, or enable `backend-parity` for tests"
+);
+
 mod encoding;
 mod hash;
 mod protocol;
@@ -54,13 +63,13 @@ pub use protocol::{
 
 /// The backend selected by the enabled Cargo features.
 ///
-/// `boringssl` takes precedence over `rustcrypto` when both are enabled.
+/// `boringssl` is selected in explicit `backend-parity` test builds.
 #[cfg(feature = "boringssl")]
 pub type DefaultBackend = backend::boringssl::BoringSsl;
 
 /// The backend selected by the enabled Cargo features.
 ///
-/// `boringssl` takes precedence over `rustcrypto` when both are enabled.
+/// Ordinary builds enable exactly one backend.
 #[cfg(all(feature = "rustcrypto", not(feature = "boringssl")))]
 pub type DefaultBackend = backend::rustcrypto::RustCrypto;
 

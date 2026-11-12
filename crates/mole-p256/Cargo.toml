@@ -23,6 +23,9 @@ wasm_js = ["getrandom?/wasm_js"]
 # BoringSSL backend over the `bssl-sys` FFI bindings. `bssl-sys` is not
 # published; patch it to a BoringSSL checkout (see README).
 boringssl = ["dep:bssl-sys"]
+# Explicit test mode that compiles both implementations for parity checks.
+# Ordinary builds select exactly one backend.
+backend-parity = ["rustcrypto", "boringssl"]
 
 [dependencies]
 subtle.workspace = true

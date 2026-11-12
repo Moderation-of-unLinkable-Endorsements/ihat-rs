@@ -118,8 +118,8 @@ jobs:
       - if: steps.boringssl-cache.outputs.cache-hit != 'true'
         run: scripts/build-boringssl.sh
       - run: cargo test --workspace --no-default-features --features boringssl --config boringssl/cargo-config.toml
-      - run: cargo test --workspace --features rustcrypto,boringssl --config boringssl/cargo-config.toml
-      - run: cargo clippy --workspace --all-targets --features rustcrypto,boringssl --config boringssl/cargo-config.toml -- -D warnings
+      - run: cargo test --workspace --features backend-parity --config boringssl/cargo-config.toml
+      - run: cargo clippy --workspace --all-targets --features backend-parity --config boringssl/cargo-config.toml -- -D warnings
 
   mutants:
     name: Mutation testing (changed lines)

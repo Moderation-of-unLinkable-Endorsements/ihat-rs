@@ -22,7 +22,7 @@
 # (`cargo install bindgen-cli`). Afterwards:
 #
 #   export BORINGSSL_BUILD_DIR=$PWD/boringssl/build
-#   cargo test --features boringssl --config boringssl/cargo-config.toml
+#   cargo test --no-default-features --features boringssl --config boringssl/cargo-config.toml
 set -euo pipefail
 
 # The BoringSSL revision this crate is tested against; `bssl-sys` moves in
@@ -52,4 +52,4 @@ CONFIG
 
 echo "BoringSSL $COMMIT built for $HOST in $ABS/build"
 echo "export BORINGSSL_BUILD_DIR=$ABS/build"
-echo "cargo test --features boringssl --config $DIR/cargo-config.toml"
+echo "cargo test --no-default-features --features boringssl --config $DIR/cargo-config.toml"

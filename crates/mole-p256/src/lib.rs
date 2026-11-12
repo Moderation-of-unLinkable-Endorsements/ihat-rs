@@ -30,6 +30,15 @@ extern crate alloc;
 #[cfg(not(any(feature = "rustcrypto", feature = "boringssl")))]
 compile_error!("enable at least one backend feature: `rustcrypto` or `boringssl`");
 
+#[cfg(all(
+    feature = "rustcrypto",
+    feature = "boringssl",
+    not(feature = "backend-parity")
+))]
+compile_error!(
+    "`rustcrypto` and `boringssl` are mutually exclusive; disable default features for a BoringSSL-only build, or enable `backend-parity` for tests"
+);
+
 pub mod backend;
 pub mod hash;
 pub mod random;
