@@ -30,7 +30,7 @@ use crate::protocol::{
 };
 
 /// The draft's vectors, `L = 4`.
-const DRAFT_L4: &str = include_str!("../../tests/vectors/draft-L4.txt");
+const DRAFT_L4: &str = include_str!("../../tests/vectors/draft-schlesinger-mole-ec-act-00.txt");
 
 /// Parses the draft's `key = value` blocks, joining continuation lines.
 fn parse(text: &str) -> BTreeMap<String, String> {
