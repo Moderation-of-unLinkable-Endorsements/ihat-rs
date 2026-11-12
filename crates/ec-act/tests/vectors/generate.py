@@ -38,21 +38,21 @@ reproducible; each `rand` entry records the bytes the algorithm consumed.
 import sys
 from hashlib import shake_128
 
-from rollatini import common
-from act import protocol as act, wire
-from act.vectors import entry, Source
+from ec_ihat import common
+from ec_ihat.vectors import entry, Source
+from ec_act import protocol as act, wire
 
 L = int(sys.argv[1])
 FLOWS = [tuple(int(x) for x in f.split(":")) for f in sys.argv[2].split(",")]
 INITIAL = int(sys.argv[3]) if len(sys.argv) > 3 else (2**L - 1)
-CTX_CRED = b"ACT-test-vectors-context"
-CTX_SPEND = b"ACT-test-vectors-challenge-digest"
+CTX_CRED = b"EC-ACT-test-vectors-context"
+CTX_SPEND = b"EC-ACT-test-vectors-challenge-digest"
 
 
 class LSource(Source):
     def __init__(self):
         super().__init__(b"")
-        self.stream = shake_128(b"ACTv1-P256-SHA256 extended vectors L=%d" % L).digest(1 << 20)
+        self.stream = shake_128(b"EC-ACTv1-P256-SHA256 extended vectors L=%d" % L).digest(1 << 20)
 
 
 def main():

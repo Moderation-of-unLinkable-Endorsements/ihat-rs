@@ -9,22 +9,7 @@ struct DerivationVector {
     key: &'static str,
 }
 
-const DERIVATION_VECTORS: [DerivationVector; 4] = [
-    DerivationVector {
-        context: b"ACTv1-P256-SHA256",
-        scalar: "69939067d5bddea66dd4a959625048ce61347c48de5836a82d7b22ea03607902",
-        scalars: [
-            "dada67b4ebf70e9675a0366d91ece8a0d46ac6619adafea0c27e9eb922adb7e2",
-            "191212f33badec0e7e01226e8cfc162e32cedd9bf69bdab139a06b16e561ba57",
-            "84426ca21e3a3ef60cf67ff0678752059874f1bc066539bbcc565692d56ec0da",
-        ],
-        nonces: [
-            "db3fc62991ff2e65a872d319ccd7041a0cc64469e343348133f9a2905711b260",
-            "32717efcecbbed2a7359fc5d095a1ec6d26e0d0861b96609bab7b90822bcee28",
-            "97e8b221288eb5906c88cb0000c760cea474b74607676d1a12a0e16722220e30",
-        ],
-        key: "0f2612dfb925eafc0d062b4ba6cbee09fdaec8722844f4f7a23b9c0503992cfd",
-    },
+const DERIVATION_VECTORS: [DerivationVector; 3] = [
     DerivationVector {
         context: b"EC-ACTv1-P256-SHA256",
         scalar: "5c2cf41891d007839f1f454eb8eee8903ea2a81fc04cbdca48172a0093116c15",

@@ -64,11 +64,11 @@ fn session_ids_and_tags() {
     let tag = sigma::tag(b"Spend", &[b"ctx"]).unwrap();
     assert_eq!(
         tag,
-        b"ACTv1-P256-SHA256-Spend-CMPT-with-sigma-proofs_Shake128_P256\x00\x03ctx"
+        b"EC-ACTv1-P256-SHA256-Spend-CMPT-with-sigma-proofs_Shake128_P256\x00\x03ctx"
     );
     assert_eq!(
         sigma::tag(b"IssueRequest", &[]).unwrap(),
-        b"ACTv1-P256-SHA256-IssueRequest-CMPT-with-sigma-proofs_Shake128_P256"
+        b"EC-ACTv1-P256-SHA256-IssueRequest-CMPT-with-sigma-proofs_Shake128_P256"
     );
     assert_eq!(
         sigma::tag(b"x", &[&[0u8; 65536]]).unwrap_err(),

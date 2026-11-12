@@ -1,6 +1,6 @@
 # Test vectors
 
-`draft-L4.txt` is the Test Vectors appendix of draft-authors-mole-act. The
+`draft-L4.txt` is the Test Vectors appendix of draft-schlesinger-mole-ec-act. The
 `act-L*.txt` files were generated from the draft's Python reference
 implementation by `generate.py`, which documents the exact invocations.
 `src/tests/vectors.rs` replays every `rand` entry in place of the random

@@ -24,7 +24,7 @@
 //! Credential, nor two spends to each other.
 //!
 //! This crate implements
-//! [draft-authors-mole-act](https://moderation-of-unlinkable-endorsements.github.io/internet-drafts/draft-authors-mole-act.html)
+//! [draft-schlesinger-mole-ec-act](https://datatracker.ietf.org/doc/draft-schlesinger-mole-ec-act/)
 //! for the `P256-SHA256` ciphersuite. The zero-knowledge proofs are compact
 //! NARG strings of `draft-irtf-cfrg-sigma-protocols-03`, produced by
 //! statement-specific provers that emit the same bytes as the generic
@@ -149,8 +149,8 @@ pub type DefaultBackend = backend::rustcrypto::RustCrypto;
 /// The ciphersuite identifier, `P256-SHA256`.
 pub const CIPHERSUITE_IDENTIFIER: &[u8] = b"P256-SHA256";
 
-/// The protocol context `ctx_proto = "ACTv1-" || identifier`.
-pub const PROTOCOL_CONTEXT: &[u8] = b"ACTv1-P256-SHA256";
+/// The protocol context `ctx_proto = "EC-ACTv1-" || identifier`.
+pub const PROTOCOL_CONTEXT: &[u8] = b"EC-ACTv1-P256-SHA256";
 
 /// The largest permitted balance width `L` (`MAX_BIT_LENGTH`).
 pub const MAX_BALANCE_WIDTH: u8 = 64;

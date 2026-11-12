@@ -431,7 +431,7 @@ fn derivations<B: Backend>() {
         assert_ne!(x.to_bytes(), y.to_bytes());
     }
     // The protocol context separates derivations.
-    let other = B::derive_scalars(b"ACTv1-P256-SHA256", &rand, b"a", 3).unwrap();
+    let other = B::derive_scalars(b"EC-ACTv1-P256-SHA256", &rand, b"a", 3).unwrap();
     assert_ne!(a[0].to_bytes(), other[0].to_bytes());
     let long = [1u8; 49];
     for wrong in [&long[..0], &long[..47], &long[..49]] {
@@ -607,7 +607,7 @@ fn derivation_known_answers<B: Backend>() {
 /// scalars that reach every digit of the table.
 fn fixed_base_tables<B: BackendFixedBaseExt>() {
     // ACT's first generator, a point with no known relation to `B`.
-    let h1 = B::hash_to_curve(&[b"GenH1"], &[b"HashToGroup-ACTv1-P256-SHA256"]).unwrap();
+    let h1 = B::hash_to_curve(&[b"GenH1"], &[b"HashToGroup-EC-ACTv1-P256-SHA256"]).unwrap();
     let table = B::FixedBase::new(h1.clone());
     assert_eq!(table.point(), &h1);
     assert!(alloc::format!("{table:?}").starts_with("FixedPoint("));

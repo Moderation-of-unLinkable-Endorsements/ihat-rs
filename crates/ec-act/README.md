@@ -2,7 +2,7 @@
 
 A Rust implementation of **Anonymous Credit Tokens (ACT)**, the MOLE
 Credential scheme of
-[draft-authors-mole-act](https://moderation-of-unlinkable-endorsements.github.io/internet-drafts/draft-authors-mole-act.html),
+[draft-schlesinger-mole-ec-act](https://datatracker.ietf.org/doc/draft-schlesinger-mole-ec-act/),
 for the `P256-SHA256` ciphersuite.
 
 An ACT is a keyed-verification anonymous credential whose hidden state is a
