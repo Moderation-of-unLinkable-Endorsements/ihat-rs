@@ -1,79 +1,4 @@
-//! EC-IHAT: an issuer-hiding anonymous token.
-//!
-//! An Anchor issues an Endorsement to a Client in a three-move partially
-//! blind signature: the Anchor learns neither the Endorsement nor the
-//! redemption context bound into it. The Client later redeems the
-//! Endorsement at a Moderator, which holds an ordered Anchor Set of public
-//! keys. The redemption shows the signature under a rerandomized key and
-//! proves, in size logarithmic in the Anchor Set, that the key is a shift of
-//! one of the Anchor Set's keys, without revealing which. The Moderator
-//! learns the Endorsement's nullifier and nothing about which Anchor issued
-//! it.
-//!
-//! This crate implements
-//! [draft-authors-mole-ec-ihat](https://moderation-of-unlinkable-endorsements.github.io/internet-drafts/draft-authors-mole-ec-ihat.html)
-//! for the `P256-SHA256` ciphersuite.
-//!
-//! # Flow
-//!
-//! ```
-//! use ec_ihat::{Backend, DefaultBackend, PublicKey, SecretKey};
-//!
-//! // The Anchor derives its key pair from a secret random seed, which it
-//! // keeps in order to restore the key, and publishes the public key.
-//! let secret_key_seed = DefaultBackend::generate_seed()?;
-//! let secret_key: SecretKey = SecretKey::from_seed(&secret_key_seed)?;
-//! let public_key = secret_key.public_key();
-//! let ctx_iss = b"epoch-42";
-//! let ctx_red = b"moderator.example";
-//!
-//! // Issuance: the Anchor commits, the Client challenges, the Anchor
-//! // responds, and the Client finalizes an Endorsement.
-//! let (anchor_state, commitment) = ec_ihat::commit(ctx_iss)?;
-//! let (client_state, challenge) =
-//!     ec_ihat::challenge(&public_key, ctx_iss, ctx_red, &commitment)?;
-//! let response = ec_ihat::respond(&secret_key, anchor_state, &challenge)?;
-//! let endorsement = ec_ihat::finalize(&public_key, client_state, &response)?;
-//!
-//! // Redemption: the Moderator accepts Endorsements from any Anchor in its
-//! // Anchor Set; the Client proves its Anchor is one of them.
-//! let other: PublicKey = SecretKey::from_seed(&*DefaultBackend::generate_seed()?)?.public_key();
-//! let anchor_set = [other, public_key];
-//! let challenge_digest = b"moderator challenge";
-//! let redemption =
-//!     ec_ihat::redeem(&anchor_set, 1, endorsement, ctx_iss, ctx_red, challenge_digest)?;
-//! let nf = ec_ihat::verify_redemption(&anchor_set, &redemption, ctx_iss, ctx_red, challenge_digest)?;
-//! // ... the Moderator rejects a repeated `nf` and records it here ...
-//! # let _ = nf;
-//! # Ok::<(), ec_ihat::Error>(())
-//! ```
-//!
-//! Every message and the Endorsement have the wire encoding of the draft,
-//! exposed as `to_bytes` and `from_bytes` on each type.
-//!
-//! # Backends
-//!
-//! Group and hash operations come from a [`Backend`], selected with Cargo
-//! features: `rustcrypto` (default, pure Rust) or `boringssl` (BoringSSL
-//! through `bssl-sys`, as used by Chromium). When both are enabled,
-//! `boringssl` is the [`DefaultBackend`]; every type takes the backend as a
-//! type parameter that defaults to it.
-//!
-//! # Security notes
-//!
-//! * [`respond`] consumes the Anchor's state, [`finalize`] the Client's, and
-//!   [`redeem`] the Endorsement, so none can be used twice within a process.
-//!   Persisted copies are the application's responsibility.
-//! * The Moderator must reject a repeated nullifier and record it before
-//!   granting anything on the strength of a redemption.
-//! * Operations on the Anchor's signing key and session state, on the
-//!   Client's blinding factors, and on the redemption's `delta`, Anchor
-//!   index, trapdoors, and openings are constant time with respect to those
-//!   values, except for BoringSSL point addition of equal or negated
-//!   operands (see [`backend::Point`]).
-//! * Secrets the crate derives or decodes are zeroized on drop. The bytes
-//!   of an encoding that fails to decode remain the caller's to wipe.
-
+#![doc = include_str!("../README.md")]
 #![no_std]
 #![deny(unsafe_code)]
 #![deny(missing_docs)]
@@ -99,11 +24,6 @@ mod wire;
 
 #[cfg(test)]
 mod tests;
-
-/// Compiles the README's example as a doctest so it cannot drift.
-#[cfg(doctest)]
-#[doc = include_str!("../README.md")]
-mod readme {}
 
 use core::fmt;
 
