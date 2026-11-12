@@ -12,22 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! The P-256 group, hashing, and randomness beneath the MOLE protocol
-//! crates `ec-ihat` and `ec-act`.
-//!
-//! * [`backend`]: the [`Backend`](backend::Backend) trait over the P-256
-//!   scalar field and group, SHA-256, hash-to-curve, and the operating
-//!   system's random number generator, with fixed-base multiplication as an
-//!   extension, and its RustCrypto and BoringSSL implementations.
-//! * [`hash`]: RFC 9380's `expand_message_xmd` over SHA-256, and the
-//!   group's `HashToGroup`, `HashToScalar`, `DeriveScalars`,
-//!   `ExpandScalars`, `DeriveNonces`, and `DeriveKeyPair` under a protocol
-//!   context supplied by the caller.
-//! * [`random`]: the single source of randomness of the drafts, `random(n)`.
-//!
-//! The crate implements no protocol of its own. Its API serves the protocol
-//! crates and changes with them.
-
+#![doc = include_str!("../README.md")]
 #![no_std]
 #![deny(unsafe_code)]
 #![deny(missing_docs)]

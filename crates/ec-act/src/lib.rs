@@ -12,86 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Anonymous Credit Tokens (ACT).
-//!
-//! ACT is a keyed-verification anonymous credential whose hidden state is a
-//! *balance* of credits. A Moderator issues a [`Credential`] with an initial
-//! balance; the Client later *spends* a public amount `s`, proving in zero
-//! knowledge that the Credential covers it and has not been spent before, and
-//! receives a *refund*: a fresh Credential for the remainder plus a
-//! Moderator-chosen return amount `t`. The Moderator never learns the balance
-//! and cannot link a spend to the issuance or refund that produced the
-//! Credential, nor two spends to each other.
-//!
-//! This crate implements
-//! [draft-schlesinger-mole-ec-act](https://datatracker.ietf.org/doc/draft-schlesinger-mole-ec-act/)
-//! for the `P256-SHA256` ciphersuite. The zero-knowledge proofs are compact
-//! NARG strings of `draft-irtf-cfrg-sigma-protocols-03`, produced by
-//! statement-specific provers that emit the same bytes as the generic
-//! construction while sharing work across equations.
-//!
-//! # Flow
-//!
-//! ```
-//! use ec_act::{Backend, DefaultBackend, Params, SecretKey};
-//!
-//! // Both parties agree on the balance width `L` and a credential context.
-//! let params: Params = Params::new(8)?;
-//! let ctx_cred = b"epoch-42";
-//!
-//! // The Moderator derives its key pair from a secret random seed, which it
-//! // keeps in order to restore the key, and publishes the public key.
-//! let secret_key_seed = DefaultBackend::generate_seed()?;
-//! let secret_key: SecretKey = SecretKey::from_seed(&secret_key_seed)?;
-//! let public_key = secret_key.public_key();
-//!
-//! // Issuance: the Client requests, the Moderator chooses the balance.
-//! let (state, request) = ec_act::issue_request(&params)?;
-//! let verified = ec_act::verify_issue_request(&params, &request)?;
-//! let response = ec_act::issue_response(&secret_key, ctx_cred, 100, verified)?;
-//! let credential = ec_act::finalize_issue(&params, &public_key, ctx_cred, state, &response)?;
-//! assert_eq!(credential.balance(), 100);
-//!
-//! // Spending: spend 30 credits under the challenge digest `ctx_spend`,
-//! // with no top-up allowance; the Moderator returns 5 credits.
-//! let ctx_spend = b"challenge-digest";
-//! let (state, spend) = ec_act::prove_spend(&params, credential, ctx_cred, 30, 0, ctx_spend)?;
-//! let verified = ec_act::verify_spend(&params, &secret_key, ctx_cred, ctx_spend, &spend)?;
-//! // ... the Moderator grants `verified.allowance()` and atomically records
-//! // `verified.nullifier()` together with the refund ...
-//! let refund = ec_act::issue_refund(verified, 5)?;
-//! let credential = ec_act::finalize_refund(&params, &public_key, ctx_cred, state, &refund)?;
-//! assert_eq!(credential.balance(), 75);
-//! # Ok::<(), ec_act::Error>(())
-//! ```
-//!
-//! Every message and the Credential have a fixed wire encoding, exposed as
-//! `to_bytes` and `from_bytes` on each type.
-//!
-//! # Backends
-//!
-//! Group and hash operations come from a [`Backend`], selected with Cargo
-//! features: `rustcrypto` (default, pure Rust) or `boringssl` (BoringSSL
-//! through `bssl-sys`, as used by Chromium). When both are enabled,
-//! `boringssl` is the [`DefaultBackend`]; every type takes the backend as a
-//! type parameter that defaults to it.
-//!
-//! # Security notes
-//!
-//! * `prove_spend` consumes the Credential and `finalize_issue` and
-//!   `finalize_refund` consume their state, so a value cannot be used twice
-//!   within a process. Persisted copies are the wallet's responsibility.
-//! * [`verify_spend`] returns a [`VerifiedSpend`] that is bound to the exact
-//!   message, key, configuration, and contexts it checked. The Moderator must
-//!   reject a repeated nullifier and record it atomically with the refund.
-//! * Operations on the Client's balance and blinding factors, and on the
-//!   Moderator's signing key, are constant time with respect to those values.
-//!   The exception is point addition in the BoringSSL backend, which branches
-//!   when its operands are equal or negatives of each other; when a secret
-//!   operand is random and independent of the other, the branch is taken
-//!   with negligible probability.
-//! * Secrets are zeroized on drop.
-
+#![doc = include_str!("../README.md")]
 #![no_std]
 #![deny(unsafe_code)]
 #![deny(missing_docs)]
@@ -117,11 +38,6 @@ mod wire;
 
 #[cfg(test)]
 mod tests;
-
-/// Compiles the README's example as a doctest so it cannot drift.
-#[cfg(doctest)]
-#[doc = include_str!("../README.md")]
-mod readme {}
 
 use core::fmt;
 

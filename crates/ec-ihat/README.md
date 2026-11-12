@@ -133,8 +133,8 @@ library in `p256` and `getrandom`, and the precomputed generator tables of
   odd last node in constant time, so no branch or memory access depends on
   the Anchor's index.
 * **Redemption** forms `X_hat` as `delta * B + pkA_i`, selecting the
-    key `pkA_i` from the Anchor Set in constant time. Branch commitments are
-    computed as `(c * X_hat + z * B) - c * pkA_i`, one multiplication per key.
+  key `pkA_i` from the Anchor Set in constant time. Branch commitments are
+  computed as `(c * X_hat + z * B) - c * pkA_i`, one multiplication per key.
 
 ## Security
 
@@ -183,8 +183,8 @@ The [workspace README](../../README.md) describes continuous integration.
 
 ## License
 
-Licensed under either of [Apache License, Version 2.0](LICENSE-APACHE) or
-[MIT license](LICENSE-MIT) at your option, except the files that carry a
+Licensed under either of [Apache License, Version 2.0](../../LICENSE-APACHE) or
+[MIT license](../../LICENSE-MIT) at your option, except the files that carry a
 Google LLC Apache 2.0 header, which are adapted from ACT and are under the
 Apache License, Version 2.0 only.
 
