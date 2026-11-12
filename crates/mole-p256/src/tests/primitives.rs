@@ -606,8 +606,8 @@ fn derivation_known_answers<B: Backend>() {
 /// Fixed-base multiplication agrees with general multiplication, on
 /// scalars that reach every digit of the table.
 fn fixed_base_tables<B: BackendFixedBaseExt>() {
-    // ACT's first generator, a point with no known relation to `B`.
-    let h1 = B::hash_to_curve(&[b"GenH1"], &[b"HashToGroup-EC-ACTv1-P256-SHA256"]).unwrap();
+    // A protocol-derived point with no known relation to `B`.
+    let h1 = B::hash_to_group(CTX, &[b"GenH1"]).unwrap();
     let table = B::FixedBase::new(h1.clone());
     assert_eq!(table.point(), &h1);
     assert!(alloc::format!("{table:?}").starts_with("FixedPoint("));
