@@ -51,8 +51,9 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: taiki-e/install-action@cargo-hack
       - uses: Swatinem/rust-cache@v2
-      # `boringssl` needs a BoringSSL build; the `boringssl` job covers it.
-      - run: cargo hack check --workspace --feature-powerset --features rustcrypto --exclude-features boringssl --all-targets
+      # `boringssl` and `backend-parity` need a BoringSSL build; the
+      # `boringssl` job covers them.
+      - run: cargo hack check --workspace --feature-powerset --features rustcrypto --exclude-features boringssl,backend-parity --all-targets
 
   msrv:
     name: Minimum supported Rust (library)
