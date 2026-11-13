@@ -15,74 +15,9 @@
 //! SHAKE128 through the selected cryptographic backend.
 
 #[cfg(feature = "boringssl")]
+#[path = "shake128/boringssl.rs"]
 #[allow(unsafe_code)]
-mod imp {
-    use core::ffi::c_void;
-    use core::ptr::{NonNull, null_mut};
-
-    struct Digest(NonNull<bssl_sys::EVP_MD_CTX>);
-
-    impl Digest {
-        fn new() -> Self {
-            // SAFETY: `EVP_MD_CTX_new` has no preconditions.
-            let ptr = unsafe { bssl_sys::EVP_MD_CTX_new() };
-            let digest = Self(NonNull::new(ptr).unwrap_or_else(|| alloc_failed()));
-            // SAFETY: `digest` is a fresh context, `EVP_shake128` returns a
-            // static descriptor, and a null engine selects the default.
-            let ret = unsafe {
-                bssl_sys::EVP_DigestInit_ex(digest.0.as_ptr(), bssl_sys::EVP_shake128(), null_mut())
-            };
-            assert_eq!(ret, 1);
-            digest
-        }
-
-        fn update(&mut self, input: &[u8]) {
-            // SAFETY: `self` is initialized, and `input` is a valid buffer of
-            // the supplied length.
-            let ret = unsafe {
-                bssl_sys::EVP_DigestUpdate(
-                    self.0.as_ptr(),
-                    input.as_ptr().cast::<c_void>(),
-                    input.len(),
-                )
-            };
-            assert_eq!(ret, 1);
-        }
-
-        fn squeeze(&mut self, output: &mut [u8]) {
-            // SAFETY: `self` is initialized for an XOF, and `output` is a
-            // valid writable buffer of the supplied length.
-            let ret = unsafe {
-                bssl_sys::EVP_DigestSqueeze(self.0.as_ptr(), output.as_mut_ptr(), output.len())
-            };
-            assert_eq!(ret, 1);
-        }
-    }
-
-    impl Drop for Digest {
-        fn drop(&mut self) {
-            // SAFETY: the context was allocated by `EVP_MD_CTX_new` and is
-            // owned by this wrapper.
-            unsafe { bssl_sys::EVP_MD_CTX_free(self.0.as_ptr()) };
-        }
-    }
-
-    /// Allocation failure is not handled short of aborting, as in
-    /// `bssl-crypto` and the rest of this crate's BoringSSL backend.
-    #[cold]
-    #[allow(clippy::panic)]
-    fn alloc_failed() -> ! {
-        panic!("BoringSSL allocation failed")
-    }
-
-    pub(super) fn hash(inputs: &[&[u8]], output: &mut [u8]) {
-        let mut digest = Digest::new();
-        for input in inputs {
-            digest.update(input);
-        }
-        digest.squeeze(output);
-    }
-}
+mod imp;
 
 #[cfg(all(feature = "rustcrypto", not(feature = "boringssl")))]
 mod imp {

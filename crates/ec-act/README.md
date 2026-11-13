@@ -110,7 +110,7 @@ rust_static_library("mole_p256") {
   crate_root = "../mole-p256/src/lib.rs"
   sources = [ ... every file under ../mole-p256/src/ except src/backend/rustcrypto.rs ... ]
   edition = "2024"
-  allow_unsafe = true  # bssl_sys FFI in src/backend/boringssl.rs
+  allow_unsafe = true  # bssl_sys FFI in src/backend/boringssl/ffi.rs
   features = [ "boringssl" ]
   deps = [
     "//third_party/boringssl:bssl_sys",
@@ -124,7 +124,7 @@ rust_static_library("ec_act") {
   crate_root = "src/lib.rs"
   sources = [ ... every file under src/ ... ]
   edition = "2024"
-  allow_unsafe = true  # bssl_sys EVP SHAKE128 FFI in src/shake128.rs
+  allow_unsafe = true  # bssl_sys EVP SHAKE128 FFI in src/shake128/boringssl.rs
   features = [ "boringssl" ]
   deps = [
     ":mole_p256",
