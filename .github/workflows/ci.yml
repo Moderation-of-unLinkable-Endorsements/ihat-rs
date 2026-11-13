@@ -51,8 +51,9 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: taiki-e/install-action@cargo-hack
       - uses: Swatinem/rust-cache@v2
-      # `boringssl` needs a BoringSSL build; the `boringssl` job covers it.
-      - run: cargo hack check --workspace --feature-powerset --features rustcrypto --exclude-features boringssl --all-targets
+      # `boringssl` and `backend-parity` need a BoringSSL build; the
+      # `boringssl` job covers them.
+      - run: cargo hack check --workspace --feature-powerset --features rustcrypto --exclude-features boringssl,backend-parity --all-targets
 
   msrv:
     name: Minimum supported Rust (library)
@@ -118,8 +119,8 @@ jobs:
       - if: steps.boringssl-cache.outputs.cache-hit != 'true'
         run: scripts/build-boringssl.sh
       - run: cargo test --workspace --no-default-features --features boringssl --config boringssl/cargo-config.toml
-      - run: cargo test --workspace --features rustcrypto,boringssl --config boringssl/cargo-config.toml
-      - run: cargo clippy --workspace --all-targets --features rustcrypto,boringssl --config boringssl/cargo-config.toml -- -D warnings
+      - run: cargo test --workspace --features backend-parity --config boringssl/cargo-config.toml
+      - run: cargo clippy --workspace --all-targets --features backend-parity --config boringssl/cargo-config.toml -- -D warnings
 
   mutants:
     name: Mutation testing (changed lines)

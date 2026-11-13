@@ -15,8 +15,9 @@
 //! Benchmarks of every algorithm, per backend and balance width.
 //!
 //! Run with `cargo bench` for the RustCrypto backend, or with
-//! `--features boringssl` and the `bssl-sys` patch described in the README
-//! for BoringSSL; both features together benchmark both.
+//! `--no-default-features --features boringssl` and the `bssl-sys` patch
+//! described in the README for BoringSSL; `--features backend-parity`
+//! benchmarks both.
 
 use std::time::Duration;
 

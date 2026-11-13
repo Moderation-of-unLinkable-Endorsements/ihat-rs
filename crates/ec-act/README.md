@@ -66,10 +66,11 @@ feature:
 | `boringssl`   | BoringSSL through `bssl-sys`              | `shake` (see below) |
 
 Both backends encode scalars as 32-byte big-endian integers and points as
-compressed SEC1, reject the identity, and produce identical outputs; with
-both features enabled, the test suite checks that they interoperate and that
-`boringssl` is the `DefaultBackend`. Every type takes the backend as a type
-parameter that defaults to it.
+compressed SEC1, reject the identity, and produce identical outputs. Ordinary
+builds select exactly one backend; the explicit `backend-parity` feature
+enables both for interoperability tests and selects `boringssl` as the
+`DefaultBackend`. Every type takes the backend as a type parameter that
+defaults to it.
 
 ACT uses SHAKE128 from the RustCrypto `shake` crate for both backends.
 BoringSSL implements Keccak but does not export it through a public header,
@@ -90,7 +91,7 @@ cargo install bindgen-cli          # plus git, cmake, ninja, and clang
 scripts/build-boringssl.sh         # clones and builds into ./boringssl
 
 export BORINGSSL_BUILD_DIR=$PWD/boringssl/build
-cargo test --features boringssl --config boringssl/cargo-config.toml
+cargo test --no-default-features --features boringssl --config boringssl/cargo-config.toml
 ```
 
 ### Chromium
@@ -221,8 +222,8 @@ export one.
 
 ```sh
 cargo test                                   # RustCrypto
-cargo test --features boringssl ...          # BoringSSL, see above
-cargo test --features rustcrypto,boringssl   # both, plus interoperability
+cargo test --no-default-features --features boringssl ... # BoringSSL, see above
+cargo test --features backend-parity ...     # both, plus interoperability
 cargo bench                                  # criterion, per backend and L
 ```
 

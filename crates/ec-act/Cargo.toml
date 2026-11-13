@@ -24,6 +24,9 @@ wasm_js = ["mole-p256/wasm_js"]
 # published; patch it to a BoringSSL checkout (see README). SHAKE128 comes
 # from the `shake` crate until BoringSSL exports its Keccak.
 boringssl = ["mole-p256/boringssl"]
+# Explicit test mode that compiles both implementations for parity checks.
+# Ordinary builds select exactly one backend.
+backend-parity = ["rustcrypto", "boringssl", "mole-p256/backend-parity"]
 
 [dependencies]
 mole-p256 = { path = "../mole-p256", version = "0.1.0", default-features = false }
