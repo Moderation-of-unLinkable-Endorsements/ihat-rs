@@ -412,15 +412,15 @@ impl<'a, B: BackendFixedBaseExt> Spend<'a, B> {
         w.begin(2 + l);
         w.image_term(EL_K_N, &ONE);
         w.image_term(EL_H1, &coefficient(range.s));
-        for j in 0..l {
-            w.image_term(FIXED_ELEMENTS + j, &coefficient(range.weights[j]));
+        for (j, weight) in range.weights.iter().enumerate() {
+            w.image_term(FIXED_ELEMENTS + j, &coefficient(*weight));
         }
         w.begin(3 + l);
         w.term(C, EL_H1, &ONE);
         w.term(KSTAR, EL_H2, &ONE);
         w.term(RN, EL_H3, &ONE);
-        for j in 0..l {
-            w.term(FIXED_SCALARS + l + j, EL_H3, &coefficient(range.weights[j]));
+        for (j, weight) in range.weights.iter().enumerate() {
+            w.term(FIXED_SCALARS + l + j, EL_H3, &coefficient(*weight));
         }
     }
 
