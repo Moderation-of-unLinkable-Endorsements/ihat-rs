@@ -12,14 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Known answers for ACT's own primitives: its SHAKE128 sponge, tags,
-//! coefficients, and reduction. `mole-p256` tests the group and hashing
-//! beneath them.
+//! Known answers for ACT's own primitives: its SHAKE128 sponge, coefficients,
+//! and little-endian reduction. `mole-p256` tests the group and hashing beneath
+//! them.
 
 use mole_p256::hash::BackendHashExt;
 use shake::{ExtendableOutput, Shake128, Update, XofReader};
 
-use crate::PROTOCOL_CONTEXT;
 use crate::backend::{Backend, SCALAR_LENGTH, Scalar};
 use crate::hash;
 use crate::sigma::{self, MINUS_ONE, ONE, coefficient, order_minus};
@@ -101,13 +100,9 @@ fn coefficients<B: Backend>() {
     }
 }
 
-/// ACT's tags end in its protocol context, and its little-endian
-/// `DecodeUint` reduction agrees with the scalar arithmetic and with the
-/// big-endian reduction of the reversed bytes.
-fn tags_and_reductions<B: Backend>() {
-    for dst in [hash::DST_HASH_TO_GROUP, hash::DST_HASH_TO_SCALAR] {
-        assert!(dst.ends_with(PROTOCOL_CONTEXT));
-    }
+/// ACT's little-endian `DecodeUint` reduction agrees with the scalar
+/// arithmetic and with the big-endian reduction of the reversed bytes.
+fn reductions<B: Backend>() {
     let mut bytes = [0u8; 48];
     bytes[0] = 5;
     assert_eq!(hash::reduce_le_48::<B>(&bytes).to_bytes(), coefficient(5));
@@ -135,7 +130,7 @@ fn tags_and_reductions<B: Backend>() {
     );
 }
 
-backend_tests!(coefficients, tags_and_reductions);
+backend_tests!(coefficients, reductions);
 
 /// With both backends enabled, every public output must agree.
 #[cfg(all(feature = "rustcrypto", feature = "boringssl"))]

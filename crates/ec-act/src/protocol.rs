@@ -67,10 +67,11 @@ impl<B: BackendFixedBaseExt> Params<B> {
         if balance_width == 0 || balance_width > MAX_BALANCE_WIDTH {
             return Err(Error::InvalidInput);
         }
-        let generator = |label: &[u8]| {
-            B::hash_to_curve(&[label], &[hash::DST_HASH_TO_GROUP])
-                .map(B::FixedBase::new)
-                .ok_or(Error::Derive)
+        let generator = |label: &[u8]| -> Result<B::FixedBase, Error> {
+            Ok(B::FixedBase::new(B::hash_to_group(
+                PROTOCOL_CONTEXT,
+                &[label],
+            )?))
         };
         let gens = Generators {
             g: B::Point::generator(),
@@ -428,9 +429,9 @@ secret_record!(ClientSpendState { kstar, r_star; k_prime; v1, s, a });
 /// `CreateContextScalar(ctx_cred)`.
 fn context_scalar<B: Backend>(ctx_cred: &[u8]) -> Result<B::Scalar, Error> {
     let len = u16::try_from(ctx_cred.len()).map_err(|_| Error::InvalidInput)?;
-    Ok(B::hash_to_scalar_with_dst(
+    Ok(B::hash_to_scalar(
+        PROTOCOL_CONTEXT,
         &[&len.to_be_bytes(), ctx_cred, b"CredentialContext"],
-        &[hash::DST_HASH_TO_SCALAR],
     ))
 }
 

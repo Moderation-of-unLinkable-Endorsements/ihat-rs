@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! ACT-specific hashing tags and scalar decoding.
+//! ACT-specific scalar decoding and `CtOption` handling.
 
 use mole_p256::hash::BackendHashExt;
 use subtle::CtOption;
@@ -21,11 +21,6 @@ use zeroize::Zeroize;
 use crate::backend::Backend;
 
 pub(crate) const NSEED: usize = crate::SEED_LENGTH;
-
-/// Domain separation tag of `HashToGroup`.
-pub(crate) const DST_HASH_TO_GROUP: &[u8] = b"HashToGroup-EC-ACTv1-P256-SHA256";
-/// Domain separation tag of `HashToScalar`.
-pub(crate) const DST_HASH_TO_SCALAR: &[u8] = b"HashToScalar-EC-ACTv1-P256-SHA256";
 
 /// Checks that a `CtOption` holds a value, mapping absence to `error`.
 pub(crate) fn require<T, E>(value: CtOption<T>, error: E) -> Result<T, E> {
