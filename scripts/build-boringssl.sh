@@ -25,9 +25,11 @@
 #   cargo test --no-default-features --features boringssl --config boringssl/cargo-config.toml
 set -euo pipefail
 
-# The BoringSSL revision this crate is tested against; `bssl-sys` moves in
-# lockstep with BoringSSL, so bump both together.
-COMMIT=5112448a24999caecfb6f04281379016ac79dc9a
+# Patch set 3 of https://boringssl-review.googlesource.com/c/boringssl/+/105768,
+# which adds SHAKE128 to the public EVP interface. `bssl-sys` moves in lockstep
+# with BoringSSL, so the checkout and bindings must use the same revision.
+# TODO: Rebase this pin onto the submitted mainline commit once the change lands.
+COMMIT=3ca65b1642980b849bd17faed6547453b96644a6
 DIR=${1:-boringssl}
 HOST=$(rustc -vV | sed -n 's/^host: //p')
 

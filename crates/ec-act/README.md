@@ -63,7 +63,7 @@ feature:
 | Feature       | Curve, SHA-256, hash-to-curve, randomness | SHAKE128 |
 |---------------|-------------------------------------------|----------|
 | `rustcrypto` (default) | `p256`, `sha2`, `getrandom`      | `shake`  |
-| `boringssl`   | BoringSSL through `bssl-sys`              | `shake` (see below) |
+| `boringssl`   | BoringSSL through `bssl-sys`              | BoringSSL through `bssl-sys` |
 
 Both backends encode scalars as 32-byte big-endian integers and points as
 compressed SEC1, reject the identity, and produce identical outputs. Ordinary
@@ -72,19 +72,21 @@ enables both for interoperability tests and selects `boringssl` as the
 `DefaultBackend`. Every type takes the backend as a type parameter that
 defaults to it.
 
-ACT uses SHAKE128 from the RustCrypto `shake` crate for both backends.
-BoringSSL implements Keccak but does not export it through a public header,
-so the `boringssl` configuration uses RustCrypto's implementation until
-BoringSSL exposes it through a public header and the `bssl-sys` bindings.
-The sponge only ever absorbs public data; see `src/sigma.rs` for its use.
+ACT takes SHAKE128 from the selected cryptographic stack: the RustCrypto
+`shake` crate under `rustcrypto`, and BoringSSL's EVP interface under
+`boringssl`. The sponge only ever absorbs public data; see `src/sigma.rs`
+for its use.
 
 ### Building the BoringSSL backend
 
 `bssl-sys` is not published on crates.io (the registry entry is a
 placeholder), so it must be patched to a BoringSSL checkout built with Rust
 bindings for the host. `scripts/build-boringssl.sh` does that at the commit
-this crate is tested against (`5112448a`, September 2026; `bssl-sys` moves in
-lockstep with BoringSSL) and writes a Cargo config with the patch:
+this crate is tested against (`3ca65b16`, patch set 3 of
+[BoringSSL change 105768](https://boringssl-review.googlesource.com/c/boringssl/+/105768);
+`bssl-sys` moves in lockstep with BoringSSL) and writes a Cargo config with the
+patch. This temporary review commit will be replaced by its submitted mainline
+commit once the change lands:
 
 ```sh
 cargo install bindgen-cli          # plus git, cmake, ninja, and clang
@@ -98,8 +100,8 @@ cargo test --no-default-features --features boringssl --config boringssl/cargo-c
 
 Chromium builds crates with GN rather than Cargo, listing sources and
 features explicitly. With the `boringssl` backend, this crate needs only
-`mole_p256`, `subtle`, `zeroize`, and `shake` (plus its `keccak` and `digest`
-dependencies), and `mole_p256` only `bssl_sys`, `subtle`, and `zeroize`.
+`mole_p256`, `bssl_sys`, `subtle`, and `zeroize`, and `mole_p256` only
+`bssl_sys`, `subtle`, and `zeroize`.
 Targets along the lines of Chromium's ATHM rule:
 
 ```gn
@@ -108,7 +110,7 @@ rust_static_library("mole_p256") {
   crate_root = "../mole-p256/src/lib.rs"
   sources = [ ... every file under ../mole-p256/src/ except src/backend/rustcrypto.rs ... ]
   edition = "2024"
-  allow_unsafe = true  # bssl_sys FFI in src/backend/boringssl.rs
+  allow_unsafe = true  # bssl_sys FFI in src/backend/boringssl/ffi.rs
   features = [ "boringssl" ]
   deps = [
     "//third_party/boringssl:bssl_sys",
@@ -122,10 +124,11 @@ rust_static_library("ec_act") {
   crate_root = "src/lib.rs"
   sources = [ ... every file under src/ ... ]
   edition = "2024"
+  allow_unsafe = true  # bssl_sys EVP SHAKE128 FFI in src/shake128/boringssl.rs
   features = [ "boringssl" ]
   deps = [
     ":mole_p256",
-    "//third_party/rust/shake/v0_1:lib",
+    "//third_party/boringssl:bssl_sys",
     "//third_party/rust/subtle/v2:lib",
     "//third_party/rust/zeroize/v1:lib",
   ]
