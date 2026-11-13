@@ -301,6 +301,7 @@ dependencies = [
 name = "ec-act"
 version = "0.1.0"
 dependencies = [
+ "bssl-sys",
  "criterion",
  "hex",
  "mole-p256",

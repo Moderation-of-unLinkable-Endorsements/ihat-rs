@@ -26,15 +26,12 @@ use alloc::vec::Vec;
 
 use mole_p256::hash::BackendHashExt;
 use mole_p256::random::Random;
-// TODO(boringssl): bind BoringSSL's Keccak once it is exported through a
-// public header and `bssl-sys`. For now we use the `shake` crate for both the
-// `boringssl` and `rustcrypto` backends.
-use shake::{ExtendableOutput, Shake128, Update, XofReader};
 use subtle::ConstantTimeEq;
 use zeroize::{Zeroize, Zeroizing};
 
 use crate::backend::{Backend, ORDER, POINT_LENGTH, Point, SCALAR_LENGTH, Scalar};
 use crate::hash::{self, NSEED};
+use crate::shake128;
 use crate::{Error, PROTOCOL_CONTEXT};
 
 /// The Sigma protocol ciphersuite identifier, carried in every tag.
@@ -107,12 +104,8 @@ pub(crate) fn tag(label: &[u8], bindings: &[&[u8]]) -> Result<Vec<u8>, Error> {
 
 /// `DeriveSessionID(tag)`.
 pub(crate) fn session_id(tag: &[u8]) -> [u8; 32] {
-    let mut sponge = Shake128::default();
-    sponge.update(SESSION_ID_LABEL);
-    sponge.update(&INIT_PADDING);
-    sponge.update(tag);
     let mut out = [0u8; 32];
-    sponge.finalize_xof().read(&mut out);
+    shake128::hash(&[SESSION_ID_LABEL, &INIT_PADDING, tag], &mut out);
     out
 }
 
@@ -120,13 +113,11 @@ pub(crate) fn session_id(tag: &[u8]) -> [u8; 32] {
 /// the serialized relation and commitments, and the challenge is the
 /// little-endian reduction of `Ns + 16` squeezed bytes.
 fn challenge<B: Backend>(session_id: &[u8; 32], relation: &[u8], commitments: &[u8]) -> B::Scalar {
-    let mut sponge = Shake128::default();
-    sponge.update(session_id);
-    sponge.update(&INIT_PADDING);
-    sponge.update(relation);
-    sponge.update(commitments);
     let mut out = [0u8; 48];
-    sponge.finalize_xof().read(&mut out);
+    shake128::hash(
+        &[session_id, &INIT_PADDING, relation, commitments],
+        &mut out,
+    );
     hash::reduce_le_48::<B>(&out)
 }
 

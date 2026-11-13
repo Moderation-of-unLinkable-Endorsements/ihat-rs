@@ -17,10 +17,10 @@
 //! them.
 
 use mole_p256::hash::BackendHashExt;
-use shake::{ExtendableOutput, Shake128, Update, XofReader};
 
 use crate::backend::{Backend, SCALAR_LENGTH, Scalar};
 use crate::hash;
+use crate::shake128;
 use crate::sigma::{self, MINUS_ONE, ONE, coefficient, order_minus};
 
 /// SHAKE128 known answers, through the protocol's sponge.
@@ -37,24 +37,15 @@ fn shake128_known_answers() {
         ),
     ];
     for (msg, expected) in cases {
-        let mut sponge = Shake128::default();
-        sponge.update(msg);
         let mut out = [0u8; 32];
-        sponge.finalize_xof().read(&mut out);
+        shake128::hash(&[msg], &mut out);
         assert_eq!(hex::encode(out), expected);
     }
-    // Split absorbs and split reads see one stream.
-    let mut sponge = Shake128::default();
-    sponge.update(b"ab");
-    sponge.update(b"c");
-    let mut reader = sponge.finalize_xof();
+    // Split absorbs see the same stream as one contiguous input.
     let mut out = [0u8; 200];
-    reader.read(&mut out[..7]);
-    reader.read(&mut out[7..]);
-    let mut sponge = Shake128::default();
-    sponge.update(b"abc");
+    shake128::hash(&[b"ab", b"c"], &mut out);
     let mut whole = [0u8; 200];
-    sponge.finalize_xof().read(&mut whole);
+    shake128::hash(&[b"abc"], &mut whole);
     assert_eq!(out, whole);
 }
 
@@ -74,12 +65,11 @@ fn session_ids_and_tags() {
         crate::Error::InvalidInput
     );
     // DeriveSessionID(tag) = SHAKE128(label || zeros(136) || tag)[..32].
-    let mut sponge = Shake128::default();
-    sponge.update(b"irtf-cfrg-fiat-shamir/session-id");
-    sponge.update(&[0u8; 136]);
-    sponge.update(&tag);
     let mut expected = [0u8; 32];
-    sponge.finalize_xof().read(&mut expected);
+    shake128::hash(
+        &[b"irtf-cfrg-fiat-shamir/session-id", &[0u8; 136], &tag],
+        &mut expected,
+    );
     assert_eq!(sigma::session_id(&tag), expected);
 }
 
