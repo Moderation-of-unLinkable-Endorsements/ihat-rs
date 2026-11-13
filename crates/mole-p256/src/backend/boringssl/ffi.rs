@@ -32,14 +32,14 @@ use crate::backend::{FIELD_MODULUS, POINT_LENGTH, SCALAR_LENGTH};
 fn group() -> *const bssl_sys::EC_GROUP {
     // SAFETY: returns a static group; no resources to release.
     let group = unsafe { bssl_sys::EC_group_p256() };
-    assert!(!group.is_null());
+    debug_assert!(!group.is_null());
     group
 }
 
 fn order() -> *const bssl_sys::BIGNUM {
     // SAFETY: `group()` is valid; the order is owned by the static group.
     let order = unsafe { bssl_sys::EC_GROUP_get0_order(group()) };
-    assert!(!order.is_null());
+    debug_assert!(!order.is_null());
     order
 }
 
@@ -444,7 +444,7 @@ impl crate::backend::Point for Point {
     fn generator() -> Self {
         // SAFETY: `group()` is valid; the generator is owned by the group.
         let generator = unsafe { bssl_sys::EC_GROUP_get0_generator(group()) };
-        assert!(!generator.is_null());
+        debug_assert!(!generator.is_null());
         // SAFETY: `generator` and `group()` are valid.
         let ptr = unsafe { bssl_sys::EC_POINT_dup(generator, group()) };
         Self(NonNull::new(ptr).unwrap_or_else(|| alloc_failed()))
