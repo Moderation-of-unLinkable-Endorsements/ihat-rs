@@ -46,10 +46,10 @@ assert_eq!(credential.balance(), 75);
 # Ok::<(), ec_act::Error>(())
 ```
 
-Every message, the Credential, and both Client states have `to_bytes` and
-`from_bytes`; the message encodings are those of the draft, and the others
-are storage encodings that match the draft's test-vector representation,
-returned as `Zeroizing<Vec<u8>>` because they hold secrets.
+Every protocol message has the fixed wire encoding defined by the draft.
+Credentials and Client continuation states instead have local secret-storage
+encodings. Each type exposes `to_bytes` and `from_bytes`; secret encodings are
+returned as `Zeroizing<Vec<u8>>`.
 `examples/demo.rs` runs the four spend shapes through the encodings.
 
 ## Backends

@@ -12,8 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! The encodings of Section 5.7 of the draft, plus storage encodings of the
-//! Credential and the Client's states.
+//! The protocol-message encodings of Section 5.7 of the draft.
 //!
 //! Decoding checks lengths, canonical encodings (which excludes the identity
 //! element), amount bounds against the balance width, and that a spend's
@@ -21,82 +20,13 @@
 
 use alloc::vec::Vec;
 
-use zeroize::Zeroizing;
-
 use crate::Error;
-use crate::backend::{Backend, BackendFixedBaseExt, POINT_LENGTH, Point, SCALAR_LENGTH, Scalar};
-use crate::hash::require;
+use crate::backend::{BackendFixedBaseExt, POINT_LENGTH, SCALAR_LENGTH, Scalar};
+use crate::encoding::{AMOUNT_LENGTH, Reader, array};
 use crate::protocol::{
-    ClientIssuanceState, ClientSpendState, Credential, IssueRequestMessage, IssueResponseMessage,
-    Params, RefundMessage, SpendMessage, point_bytes,
+    IssueRequestMessage, IssueResponseMessage, Params, RefundMessage, SpendMessage, point_bytes,
 };
 use crate::statements::{spend_weights, spend_witness_count};
-
-/// Length of a `uint64` amount on the wire.
-const AMOUNT_LENGTH: usize = 8;
-
-struct Reader<'a> {
-    data: &'a [u8],
-    offset: usize,
-}
-
-impl<'a> Reader<'a> {
-    fn new(data: &'a [u8]) -> Self {
-        Self { data, offset: 0 }
-    }
-
-    fn take(&mut self, length: usize) -> Result<&'a [u8], Error> {
-        let end = self.offset.checked_add(length).ok_or(Error::Deserialize)?;
-        let slice = self.data.get(self.offset..end).ok_or(Error::Deserialize)?;
-        self.offset = end;
-        Ok(slice)
-    }
-
-    fn array<const N: usize>(&mut self) -> Result<&'a [u8; N], Error> {
-        self.take(N)?.try_into().map_err(|_| Error::Deserialize)
-    }
-
-    fn element<B: Backend>(&mut self) -> Result<B::Point, Error> {
-        require(B::Point::from_bytes(self.array()?), Error::Deserialize)
-    }
-
-    fn elements<B: Backend>(&mut self, count: usize) -> Result<Vec<B::Point>, Error> {
-        (0..count).map(|_| self.element::<B>()).collect()
-    }
-
-    fn scalar<B: Backend>(&mut self) -> Result<B::Scalar, Error> {
-        require(B::Scalar::from_bytes(self.array()?), Error::Deserialize)
-    }
-
-    fn amount<B: BackendFixedBaseExt>(&mut self, params: &Params<B>) -> Result<u64, Error> {
-        let value = u64::from_be_bytes(*self.array()?);
-        params.check_amount(value)?;
-        Ok(value)
-    }
-
-    /// A compact NARG string for `witnesses` scalars, with every scalar
-    /// checked to be canonical.
-    fn proof<B: Backend>(&mut self, witnesses: usize) -> Result<&'a [u8], Error> {
-        let proof = self.take((witnesses + 1) * SCALAR_LENGTH)?;
-        for chunk in proof.chunks_exact(SCALAR_LENGTH) {
-            let bytes: &[u8; SCALAR_LENGTH] = chunk.try_into().map_err(|_| Error::Deserialize)?;
-            require(B::Scalar::from_bytes(bytes), Error::Deserialize)?;
-        }
-        Ok(proof)
-    }
-
-    fn finish(self) -> Result<(), Error> {
-        if self.offset == self.data.len() {
-            Ok(())
-        } else {
-            Err(Error::Deserialize)
-        }
-    }
-}
-
-fn array<const N: usize>(bytes: &[u8]) -> Result<[u8; N], Error> {
-    bytes.try_into().map_err(|_| Error::Deserialize)
-}
 
 impl<B: BackendFixedBaseExt> IssueRequestMessage<B> {
     /// The encoded length: `Ne + 3 * Ns`.
@@ -250,100 +180,5 @@ impl<B: BackendFixedBaseExt> SpendMessage<B> {
             com_c,
             pok,
         })
-    }
-}
-
-impl<B: BackendFixedBaseExt> Credential<B> {
-    /// The encoded length: `3 * Ns + 8 + Ne`.
-    pub const LENGTH: usize = 3 * SCALAR_LENGTH + AMOUNT_LENGTH + POINT_LENGTH;
-
-    /// Encodes as `Scalar k || uint64 c || Scalar r || Element A || Scalar e`,
-    /// for storage. The encoding is secret.
-    pub fn to_bytes(&self) -> Zeroizing<Vec<u8>> {
-        let mut out = Zeroizing::new(Vec::with_capacity(Self::LENGTH));
-        out.extend_from_slice(Zeroizing::new(self.k.to_bytes()).as_ref());
-        out.extend_from_slice(&self.c.to_be_bytes());
-        out.extend_from_slice(Zeroizing::new(self.r.to_bytes()).as_ref());
-        out.extend_from_slice(&point_bytes(&self.a));
-        out.extend_from_slice(Zeroizing::new(self.e.to_bytes()).as_ref());
-        debug_assert_eq!(out.len(), Self::LENGTH);
-        out
-    }
-
-    /// Decodes the encoding of [`Self::to_bytes`], checking `c < 2^L`.
-    pub fn from_bytes(params: &Params<B>, bytes: &[u8]) -> Result<Self, Error> {
-        let mut reader = Reader::new(bytes);
-        let credential = Self {
-            k: reader.scalar::<B>()?,
-            c: reader.amount(params)?,
-            r: reader.scalar::<B>()?,
-            a: reader.element::<B>()?,
-            e: reader.scalar::<B>()?,
-        };
-        reader.finish()?;
-        Ok(credential)
-    }
-}
-
-impl<B: BackendFixedBaseExt> ClientIssuanceState<B> {
-    /// The encoded length: `2 * Ns + Ne`.
-    pub const LENGTH: usize = 2 * SCALAR_LENGTH + POINT_LENGTH;
-
-    /// Encodes as `Scalar k || Scalar r || Element K`, for storage. The
-    /// encoding is secret.
-    pub fn to_bytes(&self) -> Zeroizing<Vec<u8>> {
-        let mut out = Zeroizing::new(Vec::with_capacity(Self::LENGTH));
-        out.extend_from_slice(Zeroizing::new(self.k.to_bytes()).as_ref());
-        out.extend_from_slice(Zeroizing::new(self.r.to_bytes()).as_ref());
-        out.extend_from_slice(&point_bytes(&self.k_commitment));
-        debug_assert_eq!(out.len(), Self::LENGTH);
-        out
-    }
-
-    /// Decodes the encoding of [`Self::to_bytes`].
-    pub fn from_bytes(_params: &Params<B>, bytes: &[u8]) -> Result<Self, Error> {
-        let mut reader = Reader::new(bytes);
-        let state = Self {
-            k: reader.scalar::<B>()?,
-            r: reader.scalar::<B>()?,
-            k_commitment: reader.element::<B>()?,
-        };
-        reader.finish()?;
-        Ok(state)
-    }
-}
-
-impl<B: BackendFixedBaseExt> ClientSpendState<B> {
-    /// The encoded length: `2 * Ns + 3 * 8 + Ne`.
-    pub const LENGTH: usize = 2 * SCALAR_LENGTH + 3 * AMOUNT_LENGTH + POINT_LENGTH;
-
-    /// Encodes as `Scalar kstar || Scalar r_star || uint64 v1 || uint64 s ||
-    /// uint64 a || Element K_prime`, for storage. The encoding is secret.
-    pub fn to_bytes(&self) -> Zeroizing<Vec<u8>> {
-        let mut out = Zeroizing::new(Vec::with_capacity(Self::LENGTH));
-        out.extend_from_slice(Zeroizing::new(self.kstar.to_bytes()).as_ref());
-        out.extend_from_slice(Zeroizing::new(self.r_star.to_bytes()).as_ref());
-        out.extend_from_slice(&self.v1.to_be_bytes());
-        out.extend_from_slice(&self.s.to_be_bytes());
-        out.extend_from_slice(&self.a.to_be_bytes());
-        out.extend_from_slice(&point_bytes(&self.k_prime));
-        debug_assert_eq!(out.len(), Self::LENGTH);
-        out
-    }
-
-    /// Decodes the encoding of [`Self::to_bytes`], checking the amounts
-    /// against `2^L`.
-    pub fn from_bytes(params: &Params<B>, bytes: &[u8]) -> Result<Self, Error> {
-        let mut reader = Reader::new(bytes);
-        let state = Self {
-            kstar: reader.scalar::<B>()?,
-            r_star: reader.scalar::<B>()?,
-            v1: reader.amount(params)?,
-            s: reader.amount(params)?,
-            a: reader.amount(params)?,
-            k_prime: reader.element::<B>()?,
-        };
-        reader.finish()?;
-        Ok(state)
     }
 }
